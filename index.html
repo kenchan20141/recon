@@ -2,13 +2,15 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <!-- 保持鎖定縮放，防止輸入時跑版 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- SECURITY: Content Security Policy (CSP) to prevent XSS -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
+
     <title>AI RECON</title>
     
     <!-- Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
@@ -19,6 +21,7 @@
         :root {
             --primary-color: #00f3ff;
             --secondary-color: #ff0055;
+            --success-color: #00ff9d;
             --warning-color: #ffcc00;
             --bg-color: #050505;
             --panel-bg: rgba(15, 25, 35, 0.98);
@@ -38,7 +41,7 @@
             height: 100vh;
             display: flex; flex-direction: column; align-items: center; overflow-x: hidden;
             font-size: 18px; 
-            padding-bottom: 40px; /* 預留空間給 footer */
+            padding-bottom: 40px;
         }
 
         /* HEADER */
@@ -60,8 +63,11 @@
 
         .led { width: 12px; height: 12px; border-radius: 50%; background: #333; box-shadow: 0 0 5px #333; transition: 0.3s; }
         .led.on { background: var(--primary-color); box-shadow: 0 0 15px var(--primary-color); }
+        .led.scan { background: var(--success-color); box-shadow: 0 0 15px var(--success-color); animation: pulse-green 1s infinite; }
         .led.err { background: var(--secondary-color); box-shadow: 0 0 15px var(--secondary-color); animation: pulse 0.5s infinite; }
+        
         @keyframes pulse { 50% { opacity: 0.3; } }
+        @keyframes pulse-green { 50% { opacity: 0.5; box-shadow: 0 0 25px var(--success-color); } }
 
         /* VIEWPORT */
         .viewport-wrapper { position: relative; width: 94%; max-width: 900px; margin-top: 15px; }
@@ -71,6 +77,7 @@
             box-shadow: 0 0 40px rgba(0,0,0,0.6); transition: border-color 0.3s;
         }
         .viewport.active { border-color: var(--primary-color); }
+        .viewport.verified { border-color: var(--success-color); box-shadow: 0 0 20px rgba(0, 255, 157, 0.3); }
         .viewport.alert { border-color: var(--secondary-color); box-shadow: 0 0 40px var(--secondary-color); }
         
         video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -145,69 +152,98 @@
         }
         .log-entry { border-bottom: 1px solid #222; margin-bottom: 5px; padding-bottom: 2px; }
 
-        /* CUSTOM MODAL */
+        /* PRIVACY & CONSENT MODAL */
+        .consent-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); backdrop-filter: blur(8px);
+            z-index: 999; display: flex; align-items: center; justify-content: center;
+        }
+        
+        .consent-box {
+            background: #0a0a0a; border: 2px solid var(--primary-color);
+            padding: 30px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+            box-shadow: 0 0 40px rgba(0, 243, 255, 0.15);
+            text-align: left; color: #ccc;
+        }
+
+        .consent-box h2 { color: var(--primary-color); margin-top: 0; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .consent-box h4 { color: #fff; margin: 15px 0 5px 0; }
+        .consent-box p { font-size: 0.9rem; line-height: 1.5; margin-bottom: 10px; }
+        .consent-box ul { margin: 5px 0 15px 20px; padding: 0; font-size: 0.9rem; }
+        .consent-box li { margin-bottom: 5px; }
+
+        .consent-btn {
+            display: block; width: 100%; padding: 15px; margin-top: 20px;
+            background: var(--primary-color); color: #000; font-weight: bold; font-size: 1.1rem;
+            border: none; cursor: pointer; transition: 0.3s;
+        }
+        .consent-btn:hover { box-shadow: 0 0 20px var(--primary-color); transform: scale(1.02); }
+
+        /* INPUT PROMPT MODAL */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.92); backdrop-filter: blur(5px);
-            z-index: 200; display: none; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.8); z-index: 200; display: none; align-items: center; justify-content: center;
         }
         .modal-overlay.active { display: flex; }
-        
         .modal-box {
             background: #0a0a0a; border: 2px solid var(--primary-color);
-            padding: 30px; width: 90%; max-width: 400px;
-            box-shadow: 0 0 30px rgba(0, 243, 255, 0.2);
-            text-align: center;
+            padding: 30px; width: 90%; max-width: 400px; text-align: center;
         }
-        
-        .modal-title {
-            color: var(--primary-color); font-size: 1.4rem; margin-bottom: 20px;
-            text-transform: uppercase; letter-spacing: 1px;
-        }
-        
         .modal-input {
             width: 100%; padding: 12px; margin-bottom: 25px;
             background: #111; border: 1px solid #333; border-left: 4px solid var(--primary-color);
             color: #fff; font-family: var(--font-main); font-size: 1.2rem; text-align: center;
         }
-        .modal-input:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 15px rgba(0,243,255,0.1); }
-        
         .modal-btns { display: flex; gap: 15px; }
-        .modal-btns button { font-size: 0.9rem; padding: 12px; }
 
         /* COPYRIGHT FOOTER */
         .copyright-footer {
-            position: fixed;
-            bottom: 0;
-            right: 0;
-            padding: 5px 10px;
-            background-color: #f1f1f1;
-            z-index: 150; /* Ensure it stays on top */
-            border-top-left-radius: 5px;
+            position: fixed; bottom: 0; right: 0; padding: 5px 10px;
+            background-color: #f1f1f1; z-index: 150; border-top-left-radius: 5px;
         }
-
-        .copyright-footer p {
-            margin: 0;
-            font-size: 14px;
-            color: #000; /* Force black text for readability on light bg */
-            font-family: sans-serif; /* Fallback font */
-        }
-
-        @media (max-width: 600px) {
-            .copyright-footer p {
-                font-size: 12px;
-            }
-        }
+        .copyright-footer p { margin: 0; font-size: 14px; color: #000; font-family: sans-serif; }
+        @media (max-width: 600px) { .copyright-footer p { font-size: 12px; } }
     </style>
 </head>
 <body>
+
+    <!-- PRIVACY CONSENT MODAL -->
+    <div id="consent-modal" class="consent-overlay">
+        <div class="consent-box">
+            <h2>PRIVACY & DATA CONSENT<br><span style="font-size:0.8em">隱私權與資料收集聲明</span></h2>
+            
+            <h4>1. Edge Computing Technology (邊緣運算技術)</h4>
+            <p>This system uses local browser-based processing (face-api.js). No video stream is ever sent to a server. All facial recognition happens on your device.</p>
+            <p>本系統使用瀏覽器端運算技術。影像畫面<b>絕不會</b>上傳至任何伺服器，所有臉部識別過程皆在您的裝置上完成。</p>
+
+            <h4>2. Data Collection Principles (資料收集原則)</h4>
+            <p>We adhere to strict privacy principles:</p>
+            <ul>
+                <li><b>No Images Stored:</b> We do not store or save your photos.</li>
+                <li><b>No Personal ID Linked:</b> Facial features are converted to anonymous mathematical vectors in RAM.</li>
+                <li><b>Log Only:</b> Only timestamps of potential violations (e.g., "Left seat at 10:00") are logged to the database.</li>
+            </ul>
+            <p>我們嚴格遵守以下原則：</p>
+            <ul>
+                <li><b>不儲存影像：</b>我們不會儲存您的照片或影片。</li>
+                <li><b>匿名化特徵：</b>臉部特徵僅轉化為數學向量暫存於記憶體，不與個人身份永久綁定。</li>
+                <li><b>僅記錄違規：</b>資料庫僅記錄違規事件的時間點（例如：「10:00 離開座位」），不含影像證據。</li>
+            </ul>
+
+            <h4>3. Data Security (資料安全)</h4>
+            <p>Data is stored in temporary memory and is cleared when you close the tab.</p>
+            <p>所有特徵數據僅存於暫存記憶體（RAM），關閉分頁後即自動清除。</p>
+
+            <button class="consent-btn" onclick="acceptConsent()">I AGREE / 我同意</button>
+        </div>
+    </div>
 
     <header>
         <div class="brand">AI<span style="color:var(--secondary-color)"> RECON</span></div>
         <div class="status-bar">
             <div style="display:flex; align-items:center; gap:8px;">
                 <div id="led-status" class="led"></div>
-                <span id="text-status">IDLE</span>
+                <span id="text-status">WAITING FOR CONSENT</span>
             </div>
             <div>
                 TIME: <span id="session-timer-display">--:--</span>
@@ -217,7 +253,14 @@
 
     <div class="viewport-wrapper">
         <div class="viewport" id="viewport">
-            <div id="loading-msg" class="overlay-msg">INITIALIZING...</div>
+            <div id="loading-msg" class="overlay-msg">INITIALIZING AI...</div>
+            <!-- Face Registration Overlay -->
+            <div id="reg-overlay" class="overlay-msg" style="display:none; border-color:var(--success-color); color:var(--success-color);">
+                <h3>FACE REGISTRATION</h3>
+                <p>LOOK AT CAMERA</p>
+                <div id="reg-countdown" style="font-size:3rem; font-weight:bold;">3</div>
+            </div>
+
             <video id="webcam" autoplay playsinline muted></video>
             <canvas id="canvas"></canvas>
             
@@ -234,22 +277,22 @@
 
         <div class="controls">
             <div class="btn-group">
-                <button id="btn-start" onclick="attemptStart()">ACTIVATE SYSTEM</button>
-                <button id="btn-stop" class="btn-danger" onclick="attemptStop()" disabled>TERMINATE</button>
+                <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE (LOCK FACE)</button>
+                <button id="btn-stop" class="btn-danger" onclick="stopSystem(false)" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
                 <button onclick="toggleSettings()">⚙ CONFIG / LOGS</button>
             </div>
 
             <div class="settings-panel" id="settings-panel">
-                <h3 style="color:var(--primary-color); margin:0 0 15px 0; font-size:1.2rem;">CONFIGURATION (SECURED)</h3>
+                <h3 style="color:var(--primary-color); margin:0 0 15px 0; font-size:1.2rem;">CONFIGURATION</h3>
                 
                 <div class="setting-row">
-                    <label>Target Person Count (Min)</label>
-                    <input type="number" id="cfg-person" value="1" min="1" onchange="updateConfig()">
+                    <label>Min Target Matches</label>
+                    <input type="number" id="cfg-person" value="1" min="1" readonly style="opacity:0.5; cursor:not-allowed;">
                 </div>
                 <div class="setting-row">
                     <label>Session Duration (Minutes)</label>
-                    <input type="number" id="cfg-duration" value="60" min="1" onchange="updateConfig()">
+                    <input type="number" id="cfg-duration" value="30" min="1" onchange="updateConfig()">
                 </div>
                 <div class="setting-row">
                     <label>Toilet Duration (Minutes)</label>
@@ -257,7 +300,7 @@
                 </div>
                 <div class="setting-row">
                     <label>Max Toilet Visits</label>
-                    <input type="number" id="cfg-toilet-max" value="3" min="0" onchange="updateConfig()">
+                    <input type="number" id="cfg-toilet-max" value="1" min="0" onchange="updateConfig()">
                 </div>
 
                 <div class="log-box">
@@ -269,11 +312,11 @@
         </div>
     </div>
 
-    <!-- CUSTOM MODAL HTML -->
-    <div id="custom-modal" class="modal-overlay">
+    <!-- SIMPLE INPUT MODAL -->
+    <div id="input-modal" class="modal-overlay">
         <div class="modal-box">
-            <div class="modal-title" id="modal-msg">SECURITY CHECK</div>
-            <input type="password" id="modal-input" class="modal-input" placeholder="ENTER PASSWORD">
+            <div class="modal-title" id="modal-msg">SESSION ID</div>
+            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID">
             <div class="modal-btns">
                 <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
                 <button id="modal-confirm-btn">CONFIRM</button>
@@ -302,6 +345,14 @@
         const database = firebase.database();
 
         let sessionId = ""; 
+        let consentGiven = false;
+
+        // XSS PREVENTION: Sanitize Input
+        const sanitizeInput = (str) => {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML.replace(/[.$#[\]]/g, "_"); // Firebase safe chars + HTML encoded
+        };
 
         const getDateId = () => {
             const now = new Date();
@@ -309,38 +360,24 @@
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
-        // --- PASSWORD AUTHENTICATION (NEW) ---
-        async function checkPassword(inputPwd) {
-            try {
-                // 讀取 admin/password 路徑
-                const snapshot = await database.ref('admin/password').once('value');
-                if (snapshot.exists()) {
-                    const realPwd = snapshot.val();
-                    return inputPwd === realPwd;
-                } else {
-                    alert("錯誤：資料庫中未設定 admin/password，請聯繫管理員。");
-                    return false;
-                }
-            } catch (error) {
-                console.error(error);
-                alert("連接資料庫失敗，請檢查網絡或 Firebase 規則。");
-                return false;
-            }
+        // --- MODAL LOGIC ---
+        function acceptConsent() {
+            document.getElementById('consent-modal').style.display = 'none';
+            consentGiven = true;
+            document.getElementById('text-status').innerText = "SYSTEM IDLE";
+            if(state.isAiReady) document.getElementById('btn-start').disabled = false;
         }
 
-        // --- CUSTOM MODAL LOGIC ---
-        function showCustomPrompt(message, type = 'password') {
+        function showInputPrompt(message) {
             return new Promise((resolve) => {
-                const modal = document.getElementById('custom-modal');
+                const modal = document.getElementById('input-modal');
                 const msgEl = document.getElementById('modal-msg');
                 const inputEl = document.getElementById('modal-input');
                 const confirmBtn = document.getElementById('modal-confirm-btn');
                 const cancelBtn = document.getElementById('modal-cancel-btn');
 
                 msgEl.innerText = message;
-                inputEl.type = type;
                 inputEl.value = '';
-                inputEl.placeholder = type === 'password' ? 'ACCESS CODE' : 'SESSION NAME';
                 
                 modal.classList.add('active');
                 
@@ -372,12 +409,15 @@
         const logDisplay = document.getElementById('log-display');
 
         const state = {
+            isAiReady: false,
             isRunning: false,
             isToilet: false,
             toiletVisits: 0,
-            model: null,
             animId: null,
             prevFrameData: null,
+            
+            referenceDescriptor: null,
+            isTargetPresent: false,
             
             lastLiveTimestamp: 0,
             sessionEndTime: 0,
@@ -385,21 +425,19 @@
             integrityCheckInterval: null,
             hasViolated: false,
             
-            // OPTIMIZATION: Throttling vars
             lastProcessTime: 0,
-            currentPredictions: [], // Cache predictions for smooth drawing
-            currentPersonCount: 0,
+            currentDetections: [], 
             currentMotionScore: 100
         };
         
-        // OPTIMIZATION: Process AI only every 200ms (5 FPS) instead of 60 FPS
         const PROCESS_INTERVAL = 200; 
 
+        // UPDATED DEFAULTS AS REQUESTED
         const config = {
-            minPeople: 1,
-            maxToiletVisits: 3,
+            matchThreshold: 0.55,
+            maxToiletVisits: 1,  // Updated to 1
             toiletDuration: 5, 
-            sessionMinutes: 60,
+            sessionMinutes: 30,  // Updated to 30
             timeoutMs: 5000,
             motionThreshold: 0.5 
         };
@@ -408,66 +446,18 @@
         diffCanvas.width = 64; diffCanvas.height = 48;
         const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
 
-        // --- INIT ---
+        // --- INIT & FACE API ---
         async function init() {
             try {
-                // Ensure backend is WebGL for performance
-                await tf.setBackend('webgl');
-                state.model = await cocoSsd.load();
-                document.getElementById('loading-msg').style.display = 'none';
-                document.getElementById('firebase-status').innerText = "DB Connected";
-            } catch (e) {
-                console.error(e);
-                document.getElementById('loading-msg').innerText = "AI FAILED";
-            }
-        }
-        init();
+                const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                ]);
 
-        // --- START/STOP ACTIONS (ASYNC) ---
-        async function attemptStart() {
-            const pwd = await showCustomPrompt("SYSTEM AUTHENTICATION");
-            if (!pwd) return;
-
-            document.getElementById('firebase-status').innerText = "Verifying...";
-            const isAuth = await checkPassword(pwd);
-            
-            if (isAuth) {
-                const inputName = await showCustomPrompt("SESSION IDENTIFIER", "text");
-                if (inputName && inputName.trim() !== "") {
-                    sessionId = inputName.trim().replace(/[.#$/[\]]/g, "_");
-                } else {
-                    sessionId = getDateId();
-                }
-                document.getElementById('firebase-status').innerText = "Session ID: " + sessionId;
-                startSystem();
-            } else {
-                alert("密碼錯誤 / ACCESS DENIED");
-                document.getElementById('firebase-status').innerText = "Auth Failed";
-            }
-        }
-
-        async function attemptStop() {
-            const pwd = await showCustomPrompt("TERMINATION CODE");
-            if (!pwd) return;
-
-            const isAuth = await checkPassword(pwd);
-            if(isAuth) {
-                stopSystem(false);
-            } else {
-                alert("密碼錯誤 / ACCESS DENIED");
-            }
-        }
-
-        // --- SYSTEM CONTROL ---
-        async function startSystem() {
-            if (!state.model) return;
-            try {
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: 640, 
-                        height: 480,
-                        frameRate: { ideal: 30 } // Limit input FPS to save battery
-                    }, 
+                    video: { width: 640, height: 480 },
                     audio: false
                 });
                 video.srcObject = stream;
@@ -475,48 +465,104 @@
                 video.onloadedmetadata = () => {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
-                    
-                    state.isRunning = true;
-                    state.hasViolated = false;
-                    state.lastLiveTimestamp = Date.now(); 
-                    state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
-                    
-                    updateUI(true);
-                    
-                    localStorage.setItem('monitor_active', 'true');
-                    startIntegrityCheck();
-
-                    loop();
+                    state.isAiReady = true;
+                    document.getElementById('loading-msg').style.display = 'none';
+                    if(consentGiven) document.getElementById('btn-start').disabled = false;
+                    document.getElementById('firebase-status').innerText = "System Ready";
                 };
-            } catch(e) { alert("無法存取攝像頭"); }
+
+            } catch (e) {
+                console.error(e);
+                document.getElementById('loading-msg').innerText = "AI LOAD FAILED";
+                document.getElementById('loading-msg').style.color = "var(--secondary-color)";
+            }
+        }
+        init();
+
+        // --- START SEQUENCE (NO PASSWORD) ---
+        async function attemptStart() {
+            if(!consentGiven) return;
+
+            // Optional: Ask for Session ID, default to date if empty
+            const inputName = await showInputPrompt("SESSION ID (Optional)");
+            if (inputName && inputName.trim() !== "") {
+                sessionId = sanitizeInput(inputName.trim());
+            } else {
+                sessionId = getDateId();
+            }
+            
+            startFaceRegistration();
+        }
+
+        async function startFaceRegistration() {
+            const regOverlay = document.getElementById('reg-overlay');
+            const regCount = document.getElementById('reg-countdown');
+            regOverlay.style.display = 'block';
+            
+            let count = 3;
+            regCount.innerText = count;
+            
+            const timer = setInterval(async () => {
+                count--;
+                if(count > 0) {
+                    regCount.innerText = count;
+                } else {
+                    clearInterval(timer);
+                    regCount.innerText = "LOCKING...";
+                    
+                    const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                    
+                    if (detection) {
+                        state.referenceDescriptor = detection.descriptor;
+                        regOverlay.style.display = 'none';
+                        startSystem();
+                    } else {
+                        alert("Face not detected. Please look at the camera.");
+                        regOverlay.style.display = 'none';
+                    }
+                }
+            }, 1000);
+        }
+
+        // --- SYSTEM CONTROL ---
+        function startSystem() {
+            state.isRunning = true;
+            state.hasViolated = false;
+            state.lastLiveTimestamp = Date.now(); 
+            state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+            
+            updateUI(true);
+            localStorage.setItem('monitor_active', 'true');
+            startIntegrityCheck();
+            loop();
         }
 
         function stopSystem(isAuto = false) {
             state.isRunning = false;
+            state.referenceDescriptor = null;
             cancelAnimationFrame(state.animId);
             stopAlarm();
             clearInterval(state.integrityCheckInterval);
             
-            if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
             ctx.clearRect(0,0,canvas.width,canvas.height);
             updateUI(false);
 
-            const conclusion = state.hasViolated ? "測驗結束 - 過程中有違規紀錄" : "測驗結束 - 完美通過 (無違規)";
-            const reason = isAuto ? "時間到自動停止" : "使用者手動停止";
-            logToCloud("測驗結論", `${conclusion} (${reason})`, true);
+            const conclusion = state.hasViolated ? "Session Ended - Violations Detected" : "Session Passed (Clean)";
+            const reason = isAuto ? "Time Expired" : "Manual Stop";
+            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
         }
 
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
             document.getElementById('btn-stop').disabled = !active;
             document.getElementById('btn-toilet').disabled = !active;
-            document.getElementById('led-status').className = active ? "led on" : "led";
-            document.getElementById('text-status').innerText = active ? "MONITORING" : "TERMINATED";
-            if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert');
+            document.getElementById('led-status').className = active ? "led scan" : "led";
+            document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE" : "TERMINATED";
+            if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
             timeoutBar.style.width = active ? "100%" : "0%";
         }
 
-        // --- LOOP & LOGIC (OPTIMIZED) ---
+        // --- MAIN LOOP ---
         async function loop() {
             if (!state.isRunning) return;
             if (state.isToilet) { state.animId = requestAnimationFrame(loop); return; }
@@ -527,51 +573,52 @@
 
             if (timeLeft <= 0) {
                 stopSystem(true);
-                alert("測驗時間結束");
+                alert("Time's Up!");
                 return;
             }
 
-            // 1. Clear Canvas
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-
-            // 2. Heavy Processing (Throttled)
             if (now - state.lastProcessTime > PROCESS_INTERVAL) {
                 state.lastProcessTime = now;
-
-                // AI Detection
-                const predictions = await state.model.detect(video);
-                state.currentPredictions = predictions; // Cache for drawing
                 
-                // Motion Detection
                 state.currentMotionScore = calculateMotion();
+                
+                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+                state.currentDetections = detections;
 
-                // Count People
-                let count = 0;
-                predictions.forEach(p => { if(p.class === 'person') count++; });
-                state.currentPersonCount = count;
+                let targetFound = false;
+                state.currentDetections.forEach(det => {
+                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                    det.isMatch = (distance < config.matchThreshold);
+                    if (det.isMatch) targetFound = true;
+                });
 
-                // Check Status Logic
-                checkStatus(state.currentPersonCount, state.currentMotionScore, now);
+                state.isTargetPresent = targetFound;
+                checkStatus(state.isTargetPresent, state.currentMotionScore, now);
             }
 
-            // 3. Draw Cached Results (Runs every frame for smoothness)
-            state.currentPredictions.forEach(p => {
-                if(p.class === 'person') drawBox(p);
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            state.currentDetections.forEach(det => {
+                const box = det.detection.box;
+                const drawBox = new faceapi.draw.DrawBox(box, { 
+                    label: det.isMatch ? "TARGET" : "UNKNOWN",
+                    boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
+                    lineWidth: 2
+                });
+                drawBox.draw(canvas);
             });
 
-            // Update Timeout Bar visual based on elapsed time
             updateTimeoutBar(now);
-
             state.animId = requestAnimationFrame(loop);
         }
 
-        function checkStatus(personCount, motionScore, now) {
-            const isConditionMet = (personCount >= config.minPeople) && (motionScore > config.motionThreshold);
-
-            if (isConditionMet) {
+        function checkStatus(targetPresent, motionScore, now) {
+            if (targetPresent && motionScore > config.motionThreshold) {
                 state.lastLiveTimestamp = now;
-                stopAlarm(); 
-                document.getElementById('text-status').innerText = `MONITORING (P:${personCount})`;
+                stopAlarm();
+                viewport.classList.add('verified');
+                document.getElementById('text-status').innerText = "VERIFIED: TARGET LOCKED";
+            } else {
+                viewport.classList.remove('verified');
             }
         }
 
@@ -581,39 +628,24 @@
             timeoutBar.style.width = barPct + "%";
             timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
 
-            // Trigger alarm logic (check only when throttling update happens or check here efficiently)
-            // It's safe to check logic triggers here as elapsed time is continuous
             if (elapsed > config.timeoutMs) {
                 let reason = "";
-                let dbReason = "";
+                if (!state.isTargetPresent) reason = "Target Lost / Wrong Person";
+                else if (state.currentMotionScore <= config.motionThreshold) reason = "Static Image Detected";
 
-                if (state.currentPersonCount < config.minPeople) {
-                    reason = `人數不足 (${state.currentPersonCount}/${config.minPeople})`;
-                    dbReason = `違規：人數不足`;
-                } 
-                else if (state.currentMotionScore <= config.motionThreshold) {
-                    reason = `偵測到靜態畫面/照片欺騙`;
-                    dbReason = `違規：偵測到靜態畫面/照片欺騙`;
-                }
-
-                if (reason !== "") {
-                    triggerAlarm(`違規：${reason} (已持續5秒)`, dbReason);
-                }
+                if (reason) triggerAlarm(`Violation: ${reason}`);
             }
         }
 
-        // --- ALARM & LOGGING ---
-        function triggerAlarm(uiMsg, dbMsg) {
-            if (!dbMsg) dbMsg = uiMsg;
-
-            document.getElementById('text-status').innerText = "⚠ " + uiMsg;
+        // --- ALARM & LOGGING (XSS SAFE) ---
+        function triggerAlarm(msg) {
+            document.getElementById('text-status').innerText = "⚠ " + msg;
             viewport.classList.add('alert');
             document.getElementById('led-status').className = "led err";
-            timeoutBar.style.width = "0%";
-
-            if (state.lastAlarmType !== uiMsg) {
-                logToCloud("警報", dbMsg, true); 
-                state.lastAlarmType = uiMsg;
+            
+            if (state.lastAlarmType !== msg) {
+                logToCloud("ALERT", msg, true); 
+                state.lastAlarmType = msg;
                 state.hasViolated = true;
             }
             if(alarmAudio.paused) { alarmAudio.currentTime = 0; alarmAudio.play().catch(()=>{}); }
@@ -623,7 +655,7 @@
             if(!alarmAudio.paused) alarmAudio.pause();
             state.lastAlarmType = null;
             viewport.classList.remove('alert');
-            document.getElementById('led-status').className = "led on";
+            document.getElementById('led-status').className = "led scan";
         }
 
         function logToCloud(category, msg, saveToDb = false) {
@@ -631,9 +663,18 @@
             const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
 
             if (saveToDb) {
+                // XSS PREVENTION: Use createElement + textContent instead of innerHTML
                 const div = document.createElement('div');
                 div.className = "log-entry";
-                div.innerHTML = `<span style="color:#666">[${timeStr}]</span> ${category}: ${msg}`;
+                
+                const timeSpan = document.createElement('span');
+                timeSpan.style.color = "#666";
+                timeSpan.textContent = `[${timeStr}] `;
+                
+                const msgNode = document.createTextNode(`${category}: ${msg}`);
+                
+                div.appendChild(timeSpan);
+                div.appendChild(msgNode);
                 logDisplay.appendChild(div);
                 logDisplay.scrollTop = logDisplay.scrollHeight;
 
@@ -649,7 +690,7 @@
         function startIntegrityCheck() {
             state.integrityCheckInterval = setInterval(() => {
                 if (!localStorage.getItem('monitor_active')) {
-                    logToCloud("嚴重違規", "Local Storage 被刪除", true);
+                    logToCloud("SEVERE", "Local Storage Tampered", true);
                     localStorage.setItem('monitor_active', 'true');
                     state.hasViolated = true;
                 }
@@ -658,13 +699,13 @@
 
         document.addEventListener("visibilitychange", () => {
             if (state.isRunning && !state.isToilet && document.hidden) {
-                logToCloud("嚴重違規", "切換分頁/隱藏視窗", true);
-                triggerAlarm("警告：請勿離開頁面");
+                logToCloud("SEVERE", "Tab Switched / Hidden", true);
+                triggerAlarm("Tab Switch Detected");
                 state.hasViolated = true;
             }
         });
 
-        // --- HELPERS (Micro-Motion Detection) ---
+        // --- HELPERS ---
         function calculateMotion() {
             diffCtx.drawImage(video, 0, 0, 64, 48);
             const data = diffCtx.getImageData(0,0,64,48).data;
@@ -672,20 +713,11 @@
             
             let diffPixels = 0;
             const totalPixels = data.length / 4;
-
             for(let i=0; i<data.length; i+=4) {
-                // High Sensitivity: Pixel diff > 3
-                if(Math.abs(data[i+1] - state.prevFrameData[i+1]) > 3) { 
-                    diffPixels++;
-                }
+                if(Math.abs(data[i+1] - state.prevFrameData[i+1]) > 5) diffPixels++;
             }
             state.prevFrameData = data;
             return (diffPixels / totalPixels) * 100;
-        }
-
-        function drawBox(p) {
-            const [x,y,w,h] = p.bbox;
-            ctx.strokeStyle = "var(--primary-color)"; ctx.lineWidth = 3; ctx.strokeRect(x,y,w,h);
         }
 
         function updateTimer(ms) {
@@ -697,41 +729,26 @@
             if(m < 5) el.style.color = "var(--secondary-color)";
         }
 
-        // --- SETTINGS TOGGLE (ASYNC AUTH) ---
-        async function toggleSettings() {
+        function toggleSettings() {
             const panel = document.getElementById('settings-panel');
-            if (!panel.classList.contains('open')) {
-                const pwd = await showCustomPrompt("ADMIN ACCESS REQUIRED");
-                if (!pwd) return;
-
-                const isAuth = await checkPassword(pwd);
-                if (isAuth) {
-                    panel.classList.add('open');
-                } else {
-                    alert("密碼錯誤 / ACCESS DENIED");
-                }
-            } else {
-                panel.classList.remove('open');
-            }
+            panel.classList.toggle('open');
         }
 
-        // 當輸入框改變時自動更新設定
         function updateConfig() {
-            config.minPeople = parseInt(document.getElementById('cfg-person').value) || 1;
-            config.sessionMinutes = parseInt(document.getElementById('cfg-duration').value) || 60;
+            config.sessionMinutes = parseInt(document.getElementById('cfg-duration').value) || 30;
             config.toiletDuration = parseInt(document.getElementById('cfg-toilet-dur').value) || 5;
-            config.maxToiletVisits = parseInt(document.getElementById('cfg-toilet-max').value) || 3;
+            config.maxToiletVisits = parseInt(document.getElementById('cfg-toilet-max').value) || 1;
             
             if(state.isRunning) {
                 state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             }
         }
 
-        // --- TOILET ---
+        // --- TOILET MODE ---
         let tInt = null;
         function requestToilet() {
-            if(state.toiletVisits >= config.maxToiletVisits) { alert("已達次數上限"); return; }
-            if(!confirm("確定要去廁所？將開始計時。")) return;
+            if(state.toiletVisits >= config.maxToiletVisits) { alert("Max Limit Reached / 已達次數上限"); return; }
+            if(!confirm("Start Toilet Break? Timer will start. / 確定開始如廁計時？")) return;
 
             state.isToilet = true;
             state.toiletVisits++;
@@ -753,8 +770,8 @@
                     toiletScreen.style.display = 'none';
                     state.isToilet = false;
                     state.lastLiveTimestamp = Date.now();
-                    logToCloud("違規", "如廁超時", true);
-                    triggerAlarm("如廁超時");
+                    logToCloud("VIOLATION", "Toilet Overtime", true);
+                    triggerAlarm("Toilet Overtime");
                     state.hasViolated = true;
                 }
             }, 1000);
