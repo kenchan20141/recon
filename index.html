@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <!-- SECURITY: Content Security Policy (CSP) to prevent XSS -->
+    <!-- SECURITY: Content Security Policy (CSP) -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
 
     <title>AI RECON</title>
@@ -278,9 +278,9 @@
         <div class="controls">
             <div class="btn-group">
                 <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE (LOCK FACE)</button>
-                <button id="btn-stop" class="btn-danger" onclick="stopSystem(false)" disabled>TERMINATE</button>
+                <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
-                <button onclick="toggleSettings()">⚙ CONFIG / LOGS</button>
+                <button onclick="attemptToggleSettings()">⚙ CONFIG / LOGS</button>
             </div>
 
             <div class="settings-panel" id="settings-panel">
@@ -346,6 +346,7 @@
 
         let sessionId = ""; 
         let consentGiven = false;
+        let adminPassword = ""; // To be fetched from Firebase
 
         // XSS PREVENTION: Sanitize Input
         const sanitizeInput = (str) => {
@@ -360,15 +361,31 @@
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
-        // --- MODAL LOGIC ---
+        // --- FETCH ADMIN PASSWORD ---
+        function fetchAdminPassword() {
+            database.ref('admin/password').once('value')
+                .then((snapshot) => {
+                    if (snapshot.exists()) {
+                        adminPassword = snapshot.val();
+                        console.log("Admin config loaded.");
+                    } else {
+                        console.warn("No admin password found in DB.");
+                    }
+                })
+                .catch((error) => {
+                    console.error("Firebase Read Error:", error);
+                });
+        }
+
+        // --- MODAL LOGIC (Supports Password Mode) ---
         function acceptConsent() {
             document.getElementById('consent-modal').style.display = 'none';
             consentGiven = true;
-            document.getElementById('text-status').innerText = "SYSTEM IDLE";
+            document.getElementById('text-status').innerText = "SYSTEM IDLE (系統待機)";
             if(state.isAiReady) document.getElementById('btn-start').disabled = false;
         }
 
-        function showInputPrompt(message) {
+        function showInputPrompt(message, isPassword = false) {
             return new Promise((resolve) => {
                 const modal = document.getElementById('input-modal');
                 const msgEl = document.getElementById('modal-msg');
@@ -378,8 +395,13 @@
 
                 msgEl.innerText = message;
                 inputEl.value = '';
-                
+                inputEl.type = isPassword ? 'password' : 'text'; // Toggle input type
+                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
+
                 modal.classList.add('active');
+                
+                // Focus input
+                setTimeout(() => inputEl.focus(), 100);
                 
                 const close = (val) => {
                     modal.classList.remove('active');
@@ -432,12 +454,12 @@
         
         const PROCESS_INTERVAL = 200; 
 
-        // UPDATED DEFAULTS AS REQUESTED
+        // UPDATED DEFAULTS
         const config = {
             matchThreshold: 0.55,
-            maxToiletVisits: 1,  // Updated to 1
+            maxToiletVisits: 1, 
             toiletDuration: 5, 
-            sessionMinutes: 30,  // Updated to 30
+            sessionMinutes: 30, 
             timeoutMs: 5000,
             motionThreshold: 0.5 
         };
@@ -448,6 +470,9 @@
 
         // --- INIT & FACE API ---
         async function init() {
+            // Start fetching password immediately
+            fetchAdminPassword();
+
             try {
                 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
                 await Promise.all([
@@ -479,12 +504,12 @@
         }
         init();
 
-        // --- START SEQUENCE (NO PASSWORD) ---
+        // --- START SEQUENCE ---
         async function attemptStart() {
             if(!consentGiven) return;
 
             // Optional: Ask for Session ID, default to date if empty
-            const inputName = await showInputPrompt("SESSION ID (Optional)");
+            const inputName = await showInputPrompt("SESSION ID");
             if (inputName && inputName.trim() !== "") {
                 sessionId = sanitizeInput(inputName.trim());
             } else {
@@ -517,7 +542,7 @@
                         regOverlay.style.display = 'none';
                         startSystem();
                     } else {
-                        alert("Face not detected. Please look at the camera.");
+                        alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
                         regOverlay.style.display = 'none';
                     }
                 }
@@ -537,6 +562,18 @@
             loop();
         }
 
+        // STOP SYSTEM WITH PASSWORD CHECK
+        async function attemptStopSystem() {
+            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+            if(pass === null) return; // Cancelled
+
+            if (pass === adminPassword) {
+                stopSystem(false);
+            } else {
+                alert("密碼錯誤 (Invalid Password)");
+            }
+        }
+
         function stopSystem(isAuto = false) {
             state.isRunning = false;
             state.referenceDescriptor = null;
@@ -547,8 +584,8 @@
             ctx.clearRect(0,0,canvas.width,canvas.height);
             updateUI(false);
 
-            const conclusion = state.hasViolated ? "Session Ended - Violations Detected" : "Session Passed (Clean)";
-            const reason = isAuto ? "Time Expired" : "Manual Stop";
+            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+            const reason = isAuto ? "時間到" : "手動終止";
             logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
         }
 
@@ -557,7 +594,7 @@
             document.getElementById('btn-stop').disabled = !active;
             document.getElementById('btn-toilet').disabled = !active;
             document.getElementById('led-status').className = active ? "led scan" : "led";
-            document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE" : "TERMINATED";
+            document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE (生物鎖定中)" : "TERMINATED (已終止)";
             if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
             timeoutBar.style.width = active ? "100%" : "0%";
         }
@@ -630,14 +667,14 @@
 
             if (elapsed > config.timeoutMs) {
                 let reason = "";
-                if (!state.isTargetPresent) reason = "Target Lost / Wrong Person";
-                else if (state.currentMotionScore <= config.motionThreshold) reason = "Static Image Detected";
+                if (!state.isTargetPresent) reason = "目標丟失 / 非本人";
+                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像 (照片攻擊)";
 
-                if (reason) triggerAlarm(`Violation: ${reason}`);
+                if (reason) triggerAlarm(`違規: ${reason}`);
             }
         }
 
-        // --- ALARM & LOGGING (XSS SAFE) ---
+        // --- ALARM & LOGGING (XSS SAFE + CHINESE) ---
         function triggerAlarm(msg) {
             document.getElementById('text-status').innerText = "⚠ " + msg;
             viewport.classList.add('alert');
@@ -663,7 +700,6 @@
             const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
 
             if (saveToDb) {
-                // XSS PREVENTION: Use createElement + textContent instead of innerHTML
                 const div = document.createElement('div');
                 div.className = "log-entry";
                 
@@ -690,7 +726,7 @@
         function startIntegrityCheck() {
             state.integrityCheckInterval = setInterval(() => {
                 if (!localStorage.getItem('monitor_active')) {
-                    logToCloud("SEVERE", "Local Storage Tampered", true);
+                    logToCloud("SEVERE", "Local Storage 遭篡改", true);
                     localStorage.setItem('monitor_active', 'true');
                     state.hasViolated = true;
                 }
@@ -699,8 +735,8 @@
 
         document.addEventListener("visibilitychange", () => {
             if (state.isRunning && !state.isToilet && document.hidden) {
-                logToCloud("SEVERE", "Tab Switched / Hidden", true);
-                triggerAlarm("Tab Switch Detected");
+                logToCloud("SEVERE", "分頁切換 / 隱藏", true);
+                triggerAlarm("分頁切換 / 隱藏");
                 state.hasViolated = true;
             }
         });
@@ -727,6 +763,26 @@
             const el = document.getElementById('session-timer-display');
             el.innerText = `${m}:${s.toString().padStart(2,'0')}`;
             if(m < 5) el.style.color = "var(--secondary-color)";
+        }
+
+        // --- SETTINGS (PASSWORD PROTECTED) ---
+        async function attemptToggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            
+            // If opening the panel, require password
+            if (!panel.classList.contains('open')) {
+                const pass = await showInputPrompt("請輸入管理員密碼", true);
+                if(pass === null) return; // Cancelled
+
+                if (pass === adminPassword) {
+                    toggleSettings();
+                } else {
+                    alert("密碼錯誤 (Invalid Password)");
+                }
+            } else {
+                // Closing does not require password
+                toggleSettings();
+            }
         }
 
         function toggleSettings() {
@@ -770,8 +826,8 @@
                     toiletScreen.style.display = 'none';
                     state.isToilet = false;
                     state.lastLiveTimestamp = Date.now();
-                    logToCloud("VIOLATION", "Toilet Overtime", true);
-                    triggerAlarm("Toilet Overtime");
+                    logToCloud("VIOLATION", "如廁超時", true);
+                    triggerAlarm("如廁超時");
                     state.hasViolated = true;
                 }
             }, 1000);
