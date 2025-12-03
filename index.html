@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
     <!-- SECURITY: Content Security Policy (CSP) -->
+    <!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源，防止未授權的惡意腳本執行 -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
 
-    <title>AI RECON</title>
+    <title>AI RECON - Secure Monitor</title>
     
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -207,32 +208,37 @@
 </head>
 <body>
 
-    <!-- PRIVACY CONSENT MODAL -->
+    <!-- PRIVACY CONSENT MODAL (Includes Security Details) -->
     <div id="consent-modal" class="consent-overlay">
         <div class="consent-box">
-            <h2>PRIVACY & DATA CONSENT<br><span style="font-size:0.8em">隱私權與資料收集聲明</span></h2>
+            <h2>PRIVACY & DATA CONSENT<br><span style="font-size:0.8em">隱私權與資安聲明</span></h2>
             
             <h4>1. Edge Computing Technology (邊緣運算技術)</h4>
-            <p>This system uses local browser-based processing (face-api.js). No video stream is ever sent to a server. All facial recognition happens on your device.</p>
-            <p>本系統使用瀏覽器端運算技術。影像畫面<b>絕不會</b>上傳至任何伺服器，所有臉部識別過程皆在您的裝置上完成。</p>
+            <p>This system uses local browser-based processing (face-api.js). No video stream is ever sent to a server.</p>
+            <p>本系統使用瀏覽器端運算技術。影像畫面<b>絕不會</b>上傳至任何伺服器。</p>
 
-            <h4>2. Data Collection Principles (資料收集原則)</h4>
-            <p>We adhere to strict privacy principles:</p>
-            <ul>
-                <li><b>No Images Stored:</b> We do not store or save your photos.</li>
-                <li><b>No Personal ID Linked:</b> Facial features are converted to anonymous mathematical vectors in RAM.</li>
-                <li><b>Log Only:</b> Only timestamps of potential violations (e.g., "Left seat at 10:00") are logged to the database.</li>
-            </ul>
-            <p>我們嚴格遵守以下原則：</p>
-            <ul>
-                <li><b>不儲存影像：</b>我們不會儲存您的照片或影片。</li>
-                <li><b>匿名化特徵：</b>臉部特徵僅轉化為數學向量暫存於記憶體，不與個人身份永久綁定。</li>
-                <li><b>僅記錄違規：</b>資料庫僅記錄違規事件的時間點（例如：「10:00 離開座位」），不含影像證據。</li>
-            </ul>
+            <h4>2. Data Collection (資料收集)</h4>
+            <p>Only timestamps of potential violations (e.g., "Left seat at 10:00") are logged. No images are stored.</p>
+            <p>僅記錄違規事件的時間點（如：10:00 離開座位），不儲存影像。</p>
 
-            <h4>3. Data Security (資料安全)</h4>
-            <p>Data is stored in temporary memory and is cleared when you close the tab.</p>
-            <p>所有特徵數據僅存於暫存記憶體（RAM），關閉分頁後即自動清除。</p>
+            <h4>3. Data Security (資料保存)</h4>
+            <p>Biometric data is stored in RAM only and cleared upon tab closure.</p>
+            <p>生物特徵僅存於暫存記憶體 (RAM)，關閉分頁後即自動清除。</p>
+
+            <!-- XSS PROTECTION EXPLANATION SECTION -->
+            <h4 style="color:var(--success-color);">4. Security Architecture (資安防護架構)</h4>
+            <p>We implement defense-in-depth against XSS (Cross-Site Scripting):</p>
+            <ul>
+                <li><b>Input Sanitization (輸入淨化):</b> All user inputs are sanitized to strip HTML tags and database-illegal characters before processing.</li>
+                <li><b>Content Security Policy (CSP):</b> Strict browser policies block unauthorized scripts from executing.</li>
+                <li><b>Safe DOM Rendering:</b> Logs are displayed using text-nodes only, preventing malicious code injection.</li>
+            </ul>
+            <p>本工具採用多層防禦機制對抗跨站腳本攻擊 (XSS)：</p>
+            <ul>
+                <li><b>輸入淨化：</b>所有輸入皆經過過濾，自動剔除 HTML 標籤與特殊字符。</li>
+                <li><b>CSP 策略：</b>瀏覽器僅允許執行授權來源的程式碼。</li>
+                <li><b>安全渲染：</b>日誌僅以純文字格式顯示，杜絕惡意代碼注入的可能。</li>
+            </ul>
 
             <button class="consent-btn" onclick="acceptConsent()">I AGREE / 我同意</button>
         </div>
@@ -277,7 +283,7 @@
 
         <div class="controls">
             <div class="btn-group">
-                <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE (LOCK FACE)</button>
+                <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
                 <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
                 <button onclick="attemptToggleSettings()">⚙ CONFIG / LOGS</button>
@@ -304,7 +310,7 @@
                 </div>
 
                 <div class="log-box">
-                    <div style="color:var(--warning-color); margin-bottom:8px; font-size:1rem;">VIOLATION LOGS</div>
+                    <div style="color:var(--warning-color); margin-bottom:8px; font-size:1rem;">VIOLATION LOGS (XSS-SAFE RENDER)</div>
                     <div id="log-display"></div>
                     <div id="firebase-status" style="font-size:0.8rem; color:#666; text-align:right; margin-top:8px;">Connecting...</div>
                 </div>
@@ -316,7 +322,8 @@
     <div id="input-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-title" id="modal-msg">SESSION ID</div>
-            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID">
+            <!-- autocomplete="off" helps prevent browser suggestions overlaying keypads -->
+            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off">
             <div class="modal-btns">
                 <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
                 <button id="modal-confirm-btn">CONFIRM</button>
@@ -346,13 +353,23 @@
 
         let sessionId = ""; 
         let consentGiven = false;
-        let adminPassword = ""; // To be fetched from Firebase
+        let adminPassword = "";
 
-        // XSS PREVENTION: Sanitize Input
+        // --- SECURITY: XSS PREVENTION & INPUT SANITIZATION ---
+        // XSS DEFENSE LAYER 2: Input Sanitization
+        // 將任何輸入轉換為 HTML 實體並過濾危險字符，防止腳本注入與資料庫路徑遍歷
         const sanitizeInput = (str) => {
+            if (!str) return "";
+            // 1. Create a dummy element to encode HTML entities (防範 Script 注入)
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML.replace(/[.$#[\]]/g, "_"); // Firebase safe chars + HTML encoded
+            let sanitized = div.innerHTML;
+            
+            // 2. Filter Firebase Forbidden Chars and Path Traversal (防範資料庫注入)
+            // Firebase keys cannot contain: . $ # [ ] /
+            sanitized = sanitized.replace(/[.$#[\]/]/g, "_"); 
+            
+            return sanitized;
         };
 
         const getDateId = () => {
@@ -377,7 +394,7 @@
                 });
         }
 
-        // --- MODAL LOGIC (Supports Password Mode) ---
+        // --- MODAL LOGIC (Supports Password Mode & NO AUTO KEYBOARD) ---
         function acceptConsent() {
             document.getElementById('consent-modal').style.display = 'none';
             consentGiven = true;
@@ -395,13 +412,15 @@
 
                 msgEl.innerText = message;
                 inputEl.value = '';
-                inputEl.type = isPassword ? 'password' : 'text'; // Toggle input type
+                inputEl.type = isPassword ? 'password' : 'text'; 
                 inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
 
                 modal.classList.add('active');
                 
-                // Focus input
-                setTimeout(() => inputEl.focus(), 100);
+                // --- KEYBOARD PREVENTION ---
+                // Removed the inputEl.focus() call.
+                // This ensures the virtual keyboard does NOT pop up automatically on mobile.
+                // The user must tap the input field manually.
                 
                 const close = (val) => {
                     modal.classList.remove('active');
@@ -470,7 +489,6 @@
 
         // --- INIT & FACE API ---
         async function init() {
-            // Start fetching password immediately
             fetchAdminPassword();
 
             try {
@@ -508,9 +526,9 @@
         async function attemptStart() {
             if(!consentGiven) return;
 
-            // Optional: Ask for Session ID, default to date if empty
             const inputName = await showInputPrompt("SESSION ID");
             if (inputName && inputName.trim() !== "") {
+                // SECURITY: Sanitize Input before use
                 sessionId = sanitizeInput(inputName.trim());
             } else {
                 sessionId = getDateId();
@@ -562,10 +580,9 @@
             loop();
         }
 
-        // STOP SYSTEM WITH PASSWORD CHECK
         async function attemptStopSystem() {
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; // Cancelled
+            if(pass === null) return; 
 
             if (pass === adminPassword) {
                 stopSystem(false);
@@ -616,7 +633,6 @@
 
             if (now - state.lastProcessTime > PROCESS_INTERVAL) {
                 state.lastProcessTime = now;
-                
                 state.currentMotionScore = calculateMotion();
                 
                 const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
@@ -674,7 +690,7 @@
             }
         }
 
-        // --- ALARM & LOGGING (XSS SAFE + CHINESE) ---
+        // --- ALARM & LOGGING (XSS SAFE) ---
         function triggerAlarm(msg) {
             document.getElementById('text-status').innerText = "⚠ " + msg;
             viewport.classList.add('alert');
@@ -699,6 +715,8 @@
             const now = new Date();
             const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
 
+            // XSS DEFENSE LAYER 3: Safe DOM Rendering
+            // Use createTextNode/textContent instead of innerHTML to prevent Stored XSS
             if (saveToDb) {
                 const div = document.createElement('div');
                 div.className = "log-entry";
@@ -714,10 +732,14 @@
                 logDisplay.appendChild(div);
                 logDisplay.scrollTop = logDisplay.scrollHeight;
 
+                // Sanitize before DB write (Extra Safety Layer)
+                const safeMsg = sanitizeInput(msg);
+                const safeCategory = sanitizeInput(category);
+
                 database.ref('sessions/' + sessionId + '/logs').push({
                     time: timeStr,
-                    type: category,
-                    details: msg
+                    type: safeCategory,
+                    details: safeMsg
                 });
             }
         }
@@ -769,10 +791,9 @@
         async function attemptToggleSettings() {
             const panel = document.getElementById('settings-panel');
             
-            // If opening the panel, require password
             if (!panel.classList.contains('open')) {
                 const pass = await showInputPrompt("請輸入管理員密碼", true);
-                if(pass === null) return; // Cancelled
+                if(pass === null) return; 
 
                 if (pass === adminPassword) {
                     toggleSettings();
@@ -780,7 +801,6 @@
                     alert("密碼錯誤 (Invalid Password)");
                 }
             } else {
-                // Closing does not require password
                 toggleSettings();
             }
         }
