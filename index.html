@@ -6,7 +6,10 @@
     
     <!-- SECURITY: Content Security Policy (CSP) -->
     <!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源，防止未授權的惡意腳本執行 -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com https://www.gstatic.com;">
+    <!-- 修改CSP中的connect-src部分 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com https://www.gstatic.com;">
+    
+    
     <title>AI RECON - Secure Monitor</title>
     
     <!-- Libraries -->
@@ -474,8 +477,41 @@
         const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
 
         // --- INIT & FACE API ---
-     async function init() {
-    // 移除 fetchAdminPassword(); 這行
+    async function init() {
+
+
+ // 測試Firebase連接
+    try {
+        const testRef = database.ref('test_connection');
+        await testRef.set({
+            test: "Connection test at " + new Date().toISOString()
+        });
+        console.log("Firebase連接測試成功");
+    } catch (error) {
+        console.error("Firebase連接測試失敗:", error);
+        document.getElementById('firebase-status').innerText = "Firebase連接失敗";
+        document.getElementById('firebase-status').style.color = "var(--secondary-color)";
+    }
+        
+    // Firebase錯誤處理
+    database.ref(".info/connected").on("value", (snap) => {
+        const statusEl = document.getElementById('firebase-status');
+        if (snap.val() === true) {
+            statusEl.innerText = "Firebase: Connected";
+            statusEl.style.color = "var(--success-color)";
+        } else {
+            statusEl.innerText = "Firebase: Disconnected";
+            statusEl.style.color = "var(--secondary-color)";
+        }
+    });
+    
+    // 監聽Firebase錯誤
+    database.ref().onError((error) => {
+        console.error("Firebase database error:", error);
+        const statusEl = document.getElementById('firebase-status');
+        statusEl.innerText = `Firebase Error: ${error.code}`;
+        statusEl.style.color = "var(--secondary-color)";
+    });
     
     try {
         const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
@@ -553,14 +589,24 @@
         }
 
         // --- SYSTEM CONTROL ---
-      function startSystem() {
+     function startSystem() {
     state.isRunning = true;
     state.hasViolated = false;
     state.lastLiveTimestamp = Date.now();
     state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
     
+    // 確保sessionId存在
+    if (!sessionId) {
+        sessionId = getDateId();
+        console.log("使用自動生成的sessionId:", sessionId);
+    }
+    
     updateUI(true);
     startIntegrityCheck();
+    
+    // 記錄系統啟動
+    logToCloud("SYSTEM", `監控系統啟動 - Session ID: ${sessionId}`, true);
+    
     loop();
     
     // 開始偵測後禁用設定按鈕
@@ -730,12 +776,13 @@
             document.getElementById('led-status').className = "led scan";
         }
 
-       function logToCloud(category, msg, saveToDb = false) {
+     function logToCloud(category, msg, saveToDb = false) {
     const now = new Date();
     const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
     
     // XSS DEFENSE LAYER 3: Safe DOM Rendering
     if (saveToDb) {
+        // 首先顯示在本地日誌
         const div = document.createElement('div');
         div.className = "log-entry";
         
@@ -750,28 +797,39 @@
         logDisplay.appendChild(div);
         logDisplay.scrollTop = logDisplay.scrollHeight;
         
+        // 確保sessionId存在
+        if (!sessionId) {
+            console.warn("無法記錄到Firebase: sessionId未設置");
+            return;
+        }
+        
         // Sanitize before DB write
         const safeMsg = sanitizeInput(msg);
         const safeCategory = sanitizeInput(category);
         
-        // 同時記錄到不同的路徑以便追蹤
-        const logRef = database.ref('sessions/' + sessionId + '/logs');
-        const pageEventRef = database.ref('sessions/' + sessionId + '/pageEvents');
-        
-        const logData = {
-            time: timeStr,
-            type: safeCategory,
-            details: safeMsg,
-            timestamp: Date.now()
-        };
-        
-        // 如果是頁面相關事件，同時記錄到 pageEvents
-        if (category === "SEVERE" || category === "PAGE_UNLOAD" || category === "SYSTEM") {
-            pageEventRef.push(logData);
+        // 嘗試發送到Firebase
+        try {
+            database.ref('sessions/' + sessionId + '/logs').push({
+                time: timeStr,
+                type: safeCategory,
+                details: safeMsg,
+                timestamp: Date.now()
+            }).then(() => {
+                console.log("Firebase log saved successfully");
+            }).catch((error) => {
+                console.error("Firebase寫入失敗:", error);
+                // 在本地顯示錯誤
+                const errorDiv = document.createElement('div');
+                errorDiv.className = "log-entry";
+                errorDiv.style.color = "var(--secondary-color)";
+                errorDiv.textContent = `[${timeStr}] FIREBASE ERROR: ${error.message}`;
+                logDisplay.appendChild(errorDiv);
+            });
+        } catch (error) {
+            console.error("Firebase連接錯誤:", error);
         }
-        
-        logRef.push(logData);
     }
+}
 }
 
         // --- ANTI-TAMPER ---
