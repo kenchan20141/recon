@@ -402,42 +402,46 @@
         }
 
         function showInputPrompt(message, isPassword = false) {
-            return new Promise((resolve) => {
-                const modal = document.getElementById('input-modal');
-                const msgEl = document.getElementById('modal-msg');
-                const inputEl = document.getElementById('modal-input');
-                const confirmBtn = document.getElementById('modal-confirm-btn');
-                const cancelBtn = document.getElementById('modal-cancel-btn');
+    return new Promise((resolve) => {
+        const modal = document.getElementById('input-modal');
+        const msgEl = document.getElementById('modal-msg');
+        const inputEl = document.getElementById('modal-input');
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        const cancelBtn = document.getElementById('modal-cancel-btn');
 
-                msgEl.innerText = message;
-                inputEl.value = '';
-                inputEl.type = isPassword ? 'password' : 'text'; 
-                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
+        msgEl.innerText = message;
+        inputEl.value = '';
+        inputEl.type = isPassword ? 'password' : 'text'; 
+        inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
 
-                modal.classList.add('active');
-                
-                // --- KEYBOARD PREVENTION ---
-                // Removed the inputEl.focus() call.
-                // This ensures the virtual keyboard does NOT pop up automatically on mobile.
-                // The user must tap the input field manually.
-                
-                const close = (val) => {
-                    modal.classList.remove('active');
-                    confirmBtn.onclick = null;
-                    cancelBtn.onclick = null;
-                    inputEl.onkeydown = null;
-                    resolve(val);
-                };
+        modal.classList.add('active');
+        
+        setTimeout(() => {
+            inputEl.focus();
+        }, 300);
+        
+        const close = (val) => {
+            modal.classList.remove('active');
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+            inputEl.onkeydown = null;
+            // FIX: 清除空白、換行、Tab等不可見字符
+            const cleanedVal = val ? val.trim().replace(/[\r\n\t\u200B-\u200D\uFEFF]/g, '') : null;
+            resolve(cleanedVal);
+        };
 
-                confirmBtn.onclick = () => close(inputEl.value);
-                cancelBtn.onclick = () => close(null);
-                
-                inputEl.onkeydown = (e) => {
-                    if (e.key === 'Enter') close(inputEl.value);
-                    if (e.key === 'Escape') close(null);
-                };
-            });
-        }
+        confirmBtn.onclick = () => close(inputEl.value);
+        cancelBtn.onclick = () => close(null);
+        
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // 防止 Enter 鍵加入換行
+                close(inputEl.value);
+            }
+            if (e.key === 'Escape') close(null);
+        };
+    });
+}
 
         // --- CORE STATE ---
         const video = document.getElementById('webcam');
