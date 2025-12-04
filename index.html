@@ -568,27 +568,29 @@
 
         // --- SYSTEM CONTROL ---
         function startSystem() {
-            state.isRunning = true;
-            state.hasViolated = false;
-            state.lastLiveTimestamp = Date.now(); 
-            state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
-            
-            updateUI(true);
-            localStorage.setItem('monitor_active', 'true');
-            startIntegrityCheck();
-            loop();
-        }
+    state.isRunning = true;
+    state.hasViolated = false;
+    state.lastLiveTimestamp = Date.now(); 
+    state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+    
+    updateUI(true);
+    // 刪除這行: localStorage.setItem('monitor_active', 'true');
+    startIntegrityCheck();
+    loop();
+}
 
-        async function attemptStopSystem() {
-            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; 
+       async function attemptStopSystem() {
+    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+    if(pass === null) return; 
 
-            if (pass === adminPassword) {
-                stopSystem(false);
-            } else {
-                alert("密碼錯誤 (Invalid Password)");
-            }
-        }
+    // 使用新驗證函數
+    const isValid = await verifyAdminPassword(pass);
+    if (isValid) {
+        stopSystem(false);
+    } else {
+        alert("密碼錯誤 (Invalid Password)");
+    }
+}
 
         function stopSystem(isAuto = false) {
             state.isRunning = false;
@@ -744,23 +746,56 @@
         }
 
         // --- ANTI-TAMPER ---
-        function startIntegrityCheck() {
-            state.integrityCheckInterval = setInterval(() => {
-                if (!localStorage.getItem('monitor_active')) {
-                    logToCloud("SEVERE", "Local Storage 遭篡改", true);
-                    localStorage.setItem('monitor_active', 'true');
-                    state.hasViolated = true;
-                }
-            }, 2000);
+       function startIntegrityCheck() {
+    // 清除可能存在的舊interval
+    if(state.integrityCheckInterval) clearInterval(state.integrityCheckInterval);
+    
+    // 檢查視頻流是否正常
+    state.integrityCheckInterval = setInterval(() => {
+        if (!state.isRunning) return;
+        
+        // 檢查視頻流是否中斷
+        if (video.readyState < 2) {
+            logToCloud("SEVERE", "視頻流中斷", true);
+            triggerAlarm("視頻流中斷");
+            state.hasViolated = true;
         }
-
-        document.addEventListener("visibilitychange", () => {
-            if (state.isRunning && !state.isToilet && document.hidden) {
-                logToCloud("SEVERE", "分頁切換 / 隱藏", true);
-                triggerAlarm("分頁切換 / 隱藏");
+        
+        // 檢查canvas是否被篡改(像素值異常)
+        if (state.isTargetPresent) {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            let nonZeroCount = 0;
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i] > 10 || data[i+1] > 10 || data[i+2] > 10) {
+                    nonZeroCount++;
+                }
+            }
+            // 如果畫布大部分是黑色，可能表示被覆蓋或篡改
+            if (nonZeroCount < (canvas.width * canvas.height * 0.1)) {
+                logToCloud("SEVERE", "檢測到畫面異常", true);
                 state.hasViolated = true;
             }
-        });
+        }
+    }, 5000);
+}
+
+
+        async function verifyAdminPassword(inputPassword) {
+    // 每次驗證時從Firebase獲取最新密碼
+    try {
+        const snapshot = await database.ref('admin/password').once('value');
+        if (snapshot.exists()) {
+            return inputPassword === snapshot.val();
+        }
+        return false;
+    } catch (error) {
+        console.error("密碼驗證失敗:", error);
+        return false;
+    }
+}
+
+
 
         // --- HELPERS ---
         function calculateMotion() {
@@ -787,22 +822,24 @@
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-        async function attemptToggleSettings() {
-            const panel = document.getElementById('settings-panel');
-            
-            if (!panel.classList.contains('open')) {
-                const pass = await showInputPrompt("請輸入管理員密碼", true);
-                if(pass === null) return; 
+       async function attemptToggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    
+    if (!panel.classList.contains('open')) {
+        const pass = await showInputPrompt("請輸入管理員密碼", true);
+        if(pass === null) return; 
 
-                if (pass === adminPassword) {
-                    toggleSettings();
-                } else {
-                    alert("密碼錯誤 (Invalid Password)");
-                }
-            } else {
-                toggleSettings();
-            }
+        // 使用新驗證函數
+        const isValid = await verifyAdminPassword(pass);
+        if (isValid) {
+            toggleSettings();
+        } else {
+            alert("密碼錯誤 (Invalid Password)");
         }
+    } else {
+        toggleSettings();
+    }
+}
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
@@ -860,7 +897,13 @@
             };
         }
 
-        window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
+      window.addEventListener('beforeunload', (e) => {
+    if(state.isRunning && !state.isToilet) {
+        e.preventDefault();
+        e.returnValue = '監控會談進行中，確定要離開嗎？';
+        // 不再設置LOCAL STORAGE
+    }
+});
 
     </script>
 </body>
