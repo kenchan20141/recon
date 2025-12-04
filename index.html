@@ -379,37 +379,24 @@
 
 
 function restartCameraFeed() {
-    // 取消現有的動畫幀請求
-    if (state.animId) {
-        cancelAnimationFrame(state.animId);
-        state.animId = null;
+    cancelAnimationFrame(state.animId);
+    
+    if (state.isRunning || state.isToilet) {
+        state.animId = requestAnimationFrame(loop);
+        return;
     }
     
-    // 清除畫布
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // 確保視頻元素仍在播放
-    if (video.paused && video.srcObject) {
-        video.play().catch(e => console.error("Video play failed:", e));
-    }
-    
-    // 啟動新的相機流循環
-    const drawCameraFrame = () => {
+    const drawFrame = () => {
         if (!state.isRunning && !state.isToilet) {
-            // 系統未運行時，持續顯示相機畫面
-            if (video.readyState >= 2) { // HAVE_CURRENT_DATA or more
-                try {
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                } catch (e) {
-                    console.warn("Draw image error:", e);
-                }
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (video.readyState >= 2) {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             }
-            state.animId = requestAnimationFrame(drawCameraFrame);
+            state.animId = requestAnimationFrame(drawFrame);
         }
-        // 如果系統正在運行，主循環會接管
     };
     
-    drawCameraFrame();
+    drawFrame();
 }
 
         
@@ -540,15 +527,20 @@ function restartCameraFeed() {
                 });
                 video.srcObject = stream;
                 
-        // 修改 init 函數中的 video.onloadedmetadata
-video.onloadedmetadata = () => {
+               video.onloadedmetadata = () => {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     state.isAiReady = true;
     document.getElementById('loading-msg').style.display = 'none';
     
-    // 初始啟動相機流
-    restartCameraFeed();
+    // 始終保持相機流運行
+    const drawInitialFrame = () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (!state.isRunning) {
+            state.animId = requestAnimationFrame(drawInitialFrame);
+        }
+    };
+    drawInitialFrame();
     
     if(consentGiven) document.getElementById('btn-start').disabled = false;
     document.getElementById('firebase-status').innerText = "System Ready";
@@ -577,7 +569,7 @@ video.onloadedmetadata = () => {
             startFaceRegistration();
         }
 
-      async function startFaceRegistration() {
+       async function startFaceRegistration() {
     const regOverlay = document.getElementById('reg-overlay');
     const regCount = document.getElementById('reg-countdown');
     regOverlay.style.display = 'block';
@@ -593,27 +585,17 @@ video.onloadedmetadata = () => {
             clearInterval(timer);
             regCount.innerText = "LOCKING...";
             
-            try {
-                const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-                    .withFaceLandmarks()
-                    .withFaceDescriptor();
-                
-                if (detection) {
-                    state.referenceDescriptor = detection.descriptor;
-                    regOverlay.style.display = 'none';
-                    startSystem();
-                } else {
-                    alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
-                    regOverlay.style.display = 'none';
-                    document.getElementById('btn-start').disabled = false;
-                    restartCameraFeed(); // 確保相機流恢復
-                }
-            } catch (error) {
-                console.error("Face detection error:", error);
-                alert("Face detection failed. Please try again.\n臉部偵測失敗，請重試。");
+            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+            
+            if (detection) {
+                state.referenceDescriptor = detection.descriptor;
+                regOverlay.style.display = 'none';
+                startSystem();
+            } else {
+                alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
                 regOverlay.style.display = 'none';
                 document.getElementById('btn-start').disabled = false;
-                restartCameraFeed(); // 確保相機流恢復
+                restartCameraFeed(); // 關鍵修復：重新啟動相機流
             }
         }
     }, 1000);
@@ -645,35 +627,25 @@ async function attemptStopSystem() {
         stopSystem(false);
     } else {
         alert("密碼錯誤 (Invalid Password)");
-        restartCameraFeed(); // 密碼錯誤時重啟相機
+        restartCameraFeed(); // 驗證失敗時重啟相機
     }
 }
 
-      function stopSystem(isAuto = false) {
+       function stopSystem(isAuto = false) {
     state.isRunning = false;
     state.referenceDescriptor = null;
-    
-    // 取消現有的動畫幀請求
-    if (state.animId) {
-        cancelAnimationFrame(state.animId);
-        state.animId = null;
-    }
-    
+    cancelAnimationFrame(state.animId);
     stopAlarm();
     clearInterval(state.integrityCheckInterval);
     
-    // 清除畫布
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
     updateUI(false);
 
     const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
     const reason = isAuto ? "時間到" : "手動終止";
     logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
     
-    // 延遲一下再重啟相機，確保狀態完全重置
-    setTimeout(() => {
-        restartCameraFeed();
-    }, 100);
+    restartCameraFeed(); // 關鍵修復：停止系統後重啟相機
 }
 
         function updateUI(active) {
@@ -687,90 +659,65 @@ async function attemptStopSystem() {
         }
 
         // --- MAIN LOOP ---
-    async function loop() {
-    try {
-        // 確保視頻持續顯示
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (video.readyState >= 2) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        }
-        
-        // 系統未運行或在廁所模式時，只需持續顯示視頻
-        if (!state.isRunning || state.isToilet) {
-            state.animId = requestAnimationFrame(loop);
-            return;
-        }
-
-        const now = Date.now();
-        const timeLeft = state.sessionEndTime - now;
-        updateTimer(timeLeft);
-
-        if (timeLeft <= 0) {
-            stopSystem(true);
-            alert("Time's Up!");
-            return;
-        }
-
-        if (now - state.lastProcessTime > PROCESS_INTERVAL) {
-            state.lastProcessTime = now;
-            state.currentMotionScore = calculateMotion();
-            
-            const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-                .withFaceLandmarks()
-                .withFaceDescriptors();
-            state.currentDetections = detections;
-
-            let targetFound = false;
-            if (state.referenceDescriptor) {
-                state.currentDetections.forEach(det => {
-                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                    det.isMatch = (distance < config.matchThreshold);
-                    if (det.isMatch) targetFound = true;
-                });
-            }
-
-            state.isTargetPresent = targetFound;
-            checkStatus(state.isTargetPresent, state.currentMotionScore, now);
-        }
-
-        // 在視頻上疊加繪製檢測框
-        state.currentDetections.forEach(det => {
-            const box = det.detection.box;
-            const drawBox = new faceapi.draw.DrawBox(box, { 
-                label: det.isMatch ? "TARGET" : "UNKNOWN",
-                boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
-                lineWidth: 2
-            });
-            drawBox.draw(canvas);
-        });
-
-        updateTimeoutBar(now);
+     async function loop() {
+    // 確保視頻持續顯示，即使系統未運行
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+    
+    // 系統未運行或在廁所模式時，只需持續顯示視頻
+    if (!state.isRunning || state.isToilet) {
         state.animId = requestAnimationFrame(loop);
-    } catch (error) {
-        console.error("Loop error:", error);
-        // 發生錯誤時重新啟動相機流
-        restartCameraFeed();
+        return;
     }
+
+    const now = Date.now();
+    const timeLeft = state.sessionEndTime - now;
+    updateTimer(timeLeft);
+
+    if (timeLeft <= 0) {
+        stopSystem(true);
+        alert("Time's Up!");
+        return;
+    }
+
+    if (now - state.lastProcessTime > PROCESS_INTERVAL) {
+        state.lastProcessTime = now;
+        state.currentMotionScore = calculateMotion();
+        
+        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptors();
+        state.currentDetections = detections;
+
+        let targetFound = false;
+        if (state.referenceDescriptor) { // 確保 referenceDescriptor 存在
+            state.currentDetections.forEach(det => {
+                const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                det.isMatch = (distance < config.matchThreshold);
+                if (det.isMatch) targetFound = true;
+            });
+        }
+
+        state.isTargetPresent = targetFound;
+        checkStatus(state.isTargetPresent, state.currentMotionScore, now);
+    }
+
+    // 在視頻上疊加繪製檢測框
+    state.currentDetections.forEach(det => {
+        const box = det.detection.box;
+        const drawBox = new faceapi.draw.DrawBox(box, { 
+            label: det.isMatch ? "TARGET" : "UNKNOWN",
+            boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
+            lineWidth: 2
+        });
+        drawBox.draw(canvas);
+    });
+
+    updateTimeoutBar(now);
+    state.animId = requestAnimationFrame(loop);
 }
-
-        / 新增視頻流錯誤處理
-video.onerror = function() {
-    console.error("Video stream error");
-    document.getElementById('text-status').innerText = "CAMERA ERROR";
-    document.getElementById('led-status').className = "led err";
-};
-
-// 監聽視頻暫停事件
-video.onpause = function() {
-    if (!state.isRunning && !state.isToilet) {
-        // 如果系統未運行但視頻暫停了，嘗試重新播放
-        setTimeout(() => {
-            if (video.paused && video.srcObject) {
-                video.play().catch(e => console.error("Video restart failed:", e));
-            }
-        }, 500);
-    }
-};
 
         function checkStatus(targetPresent, motionScore, now) {
             if (targetPresent && motionScore > config.motionThreshold) {
@@ -929,7 +876,7 @@ video.onpause = function() {
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-   async function attemptToggleSettings() {
+    async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
     
     if (!panel.classList.contains('open')) {
@@ -944,7 +891,7 @@ video.onpause = function() {
             toggleSettings();
         } else {
             alert("密碼錯誤 (Invalid Password)");
-            restartCameraFeed(); // 密碼錯誤時重啟相機
+            restartCameraFeed(); // 驗證失敗時重啟相機
         }
     } else {
         toggleSettings();
