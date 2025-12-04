@@ -353,12 +353,6 @@
         let sessionId = ""; 
         let consentGiven = false;
         let adminPassword = "";
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-
-// iOS 設備使用硬編碼密碼
-if (isIOS) {
-    adminPassword = "chi2025";
-}
 
         // --- SECURITY: XSS PREVENTION & INPUT SANITIZATION ---
         // XSS DEFENSE LAYER 2: Input Sanitization
@@ -383,26 +377,21 @@ if (isIOS) {
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
-       function fetchAdminPassword() {
-    // 如果是 iOS 設備，我們已設置硬編碼密碼，無需從 Firebase 獲取
-    if (isIOS) {
-        console.log("Using hardcoded password for iOS device");
-        return;
-    }
-    
-    database.ref('admin/password').once('value')
-        .then((snapshot) => {
-            if (snapshot.exists()) {
-                adminPassword = snapshot.val();
-                console.log("Admin config loaded.");
-            } else {
-                console.warn("No admin password found in DB.");
-            }
-        })
-        .catch((error) => {
-            console.error("Firebase Read Error:", error);
-        });
-}
+        // --- FETCH ADMIN PASSWORD ---
+        function fetchAdminPassword() {
+            database.ref('admin/password').once('value')
+                .then((snapshot) => {
+                    if (snapshot.exists()) {
+                        adminPassword = snapshot.val();
+                        console.log("Admin config loaded.");
+                    } else {
+                        console.warn("No admin password found in DB.");
+                    }
+                })
+                .catch((error) => {
+                    console.error("Firebase Read Error:", error);
+                });
+        }
 
         // --- MODAL LOGIC (Supports Password Mode & NO AUTO KEYBOARD) ---
         function acceptConsent() {
@@ -594,7 +583,7 @@ if (isIOS) {
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
             if(pass === null) return; 
 
-            if (pass && (pass.trim() === adminPassword.trim() || (isIOS && pass.trim() === "chi2025"))) {
+            if (pass === adminPassword) {
                 stopSystem(false);
             } else {
                 alert("密碼錯誤 (Invalid Password)");
