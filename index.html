@@ -662,43 +662,51 @@ async function attemptStopSystem() {
         }
 
         // --- MAIN LOOP ---
-     async function loop() {
-    // 確保視頻持續顯示，即使系統未運行
+    async function loop() {
+    // 永遠先畫即時影像，防止畫面卡住
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (video.readyState >= 2) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     }
-    
-    // 系統未運行或在廁所模式時，只需持續顯示視頻
+
+    // 如果沒在運行或如廁 → 只顯示畫面，不做事
     if (!state.isRunning || state.isToilet) {
         state.animId = requestAnimationFrame(loop);
         return;
     }
 
+    // ====== 以下才是真正監控邏輯（只在運行時執行）======
     const now = Date.now();
     const timeLeft = state.sessionEndTime - now;
-    updateTimer(timeLeft);
 
+    // 時間到
     if (timeLeft <= 0) {
         stopSystem(true);
         alert("Time's Up!");
         return;
     }
 
+    updateTimer(timeLeft);
+
+    // 每 200ms 偵測一次（省電又流暢）
     if (now - state.lastProcessTime > PROCESS_INTERVAL) {
         state.lastProcessTime = now;
+
+        // 運動偵測
         state.currentMotionScore = calculateMotion();
-        
+
+        // 人臉偵測 + 比對
         const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
             .withFaceLandmarks()
             .withFaceDescriptors();
-        state.currentDetections = detections;
 
+        state.currentDetections = detections;
         let targetFound = false;
-        if (state.referenceDescriptor) { // 確保 referenceDescriptor 存在
-            state.currentDetections.forEach(det => {
+
+        if (state.referenceDescriptor) {
+            detections.forEach(det => {
                 const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                det.isMatch = (distance < config.matchThreshold);
+                det.isMatch = distance < config.matchThreshold;
                 if (det.isMatch) targetFound = true;
             });
         }
@@ -707,18 +715,23 @@ async function attemptStopSystem() {
         checkStatus(state.isTargetPresent, state.currentMotionScore, now);
     }
 
-    // 在視頻上疊加繪製檢測框
+    // ====== 畫所有人臉框框（綠框 TARGET / 紅框 UNKNOWN）======
     state.currentDetections.forEach(det => {
         const box = det.detection.box;
-        const drawBox = new faceapi.draw.DrawBox(box, { 
+        const drawBox = new faceapi.draw.DrawBox(box, {
             label: det.isMatch ? "TARGET" : "UNKNOWN",
             boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
-            lineWidth: 2
+            lineWidth: 3,
+            labelBackgroundColor: "rgba(0,0,0,0.7)",
+            fontSize: 20
         });
         drawBox.draw(canvas);
     });
 
+    // 超時條
     updateTimeoutBar(now);
+
+    // 繼續下一幀
     state.animId = requestAnimationFrame(loop);
 }
 
