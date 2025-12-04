@@ -377,29 +377,6 @@
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
-
-function restartCameraFeed() {
-    cancelAnimationFrame(state.animId);
-    
-    if (state.isRunning || state.isToilet) {
-        state.animId = requestAnimationFrame(loop);
-        return;
-    }
-    
-    const drawFrame = () => {
-        if (!state.isRunning && !state.isToilet) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (video.readyState >= 2) {
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            }
-            state.animId = requestAnimationFrame(drawFrame);
-        }
-    };
-    
-    drawFrame();
-}
-
-        
         // --- FETCH ADMIN PASSWORD ---
         function fetchAdminPassword() {
             database.ref('admin/password').once('value')
@@ -435,7 +412,7 @@ function restartCameraFeed() {
                 msgEl.innerText = message;
                 inputEl.value = '';
                 inputEl.type = isPassword ? 'password' : 'text'; 
-                inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
+                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
 
                 modal.classList.add('active');
                 
@@ -527,24 +504,14 @@ function restartCameraFeed() {
                 });
                 video.srcObject = stream;
                 
-               video.onloadedmetadata = () => {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    state.isAiReady = true;
-    document.getElementById('loading-msg').style.display = 'none';
-    
-    // 始終保持相機流運行
-    const drawInitialFrame = () => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        if (!state.isRunning) {
-            state.animId = requestAnimationFrame(drawInitialFrame);
-        }
-    };
-    drawInitialFrame();
-    
-    if(consentGiven) document.getElementById('btn-start').disabled = false;
-    document.getElementById('firebase-status').innerText = "System Ready";
-};
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    state.isAiReady = true;
+                    document.getElementById('loading-msg').style.display = 'none';
+                    if(consentGiven) document.getElementById('btn-start').disabled = false;
+                    document.getElementById('firebase-status').innerText = "System Ready";
+                };
 
             } catch (e) {
                 console.error(e);
@@ -558,7 +525,7 @@ function restartCameraFeed() {
         async function attemptStart() {
             if(!consentGiven) return;
 
-            const inputName = await showInputPrompt("YOUR NAME");
+            const inputName = await showInputPrompt("SESSION ID");
             if (inputName && inputName.trim() !== "") {
                 // SECURITY: Sanitize Input before use
                 sessionId = sanitizeInput(inputName.trim());
@@ -569,87 +536,74 @@ function restartCameraFeed() {
             startFaceRegistration();
         }
 
- async function startFaceRegistration() {
-    const regOverlay = document.getElementById('reg-overlay');
-    const regCount = document.getElementById('reg-countdown');
-    regOverlay.style.display = 'block';
-
-    let count = 3;
-    regCount.innerText = count;
-
-    const timer = setInterval(async () => {
-        count--;
-        if (count > 0) {
+        async function startFaceRegistration() {
+            const regOverlay = document.getElementById('reg-overlay');
+            const regCount = document.getElementById('reg-countdown');
+            regOverlay.style.display = 'block';
+            
+            let count = 3;
             regCount.innerText = count;
-        } else {
-            clearInterval(timer);
-            regCount.innerText = "LOCKING...";
-
-            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-                .withFaceLandmarks()
-                .withFaceDescriptor();
-
-            if (detection && detection.descriptor) {
-                state.referenceDescriptor = detection.descriptor;
-                regOverlay.style.display = 'none';
-                startSystem();
-            } else {
-                regOverlay.style.display = 'none';
-                alert("未偵測到臉部，請確保正對鏡頭並有足夠光線。\n頁面即將重新整理...");
-                setTimeout(() => location.reload(), 1500);  // 1.5 秒後自動重整
-            }
+            
+            const timer = setInterval(async () => {
+                count--;
+                if(count > 0) {
+                    regCount.innerText = count;
+                } else {
+                    clearInterval(timer);
+                    regCount.innerText = "LOCKING...";
+                    
+                    const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                    
+                    if (detection) {
+                        state.referenceDescriptor = detection.descriptor;
+                        regOverlay.style.display = 'none';
+                        startSystem();
+                    } else {
+                        alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
+                        regOverlay.style.display = 'none';
+                    }
+                }
+            }, 1000);
         }
-    }, 1000);
-}
 
         // --- SYSTEM CONTROL ---
         function startSystem() {
-    state.isRunning = true;
-    state.hasViolated = false;
-    state.lastLiveTimestamp = Date.now(); 
-    state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
-    
-    updateUI(true);
-    // 刪除這行: localStorage.setItem('monitor_active', 'true');
-    startIntegrityCheck();
-    loop();
-}
+            state.isRunning = true;
+            state.hasViolated = false;
+            state.lastLiveTimestamp = Date.now(); 
+            state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+            
+            updateUI(true);
+            localStorage.setItem('monitor_active', 'true');
+            startIntegrityCheck();
+            loop();
+        }
 
-      // 在attemptStopSystem函數中
-async function attemptStopSystem() {
-    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-    
-    if (pass === null) {
-        // 用戶按取消
-        alert("已取消終止操作，頁面即將重新整理");
-        setTimeout(() => location.reload(), 1200);
-        return;
-    }
+        async function attemptStopSystem() {
+            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+            if(pass === null) return; 
 
-    const isValid = await verifyAdminPassword(pass);
-    if (isValid) {
-        stopSystem(false);
-    } else {
-        alert("密碼錯誤！頁面即將重新整理");
-        setTimeout(() => location.reload(), 1500);
-    }
-}
+            if (pass === adminPassword) {
+                stopSystem(false);
+            } else {
+                alert("密碼錯誤 (Invalid Password)");
+            }
+        }
 
-     function stopSystem(isAuto = false) {
-    state.isRunning = false;
-    state.referenceDescriptor = null;
-    cancelAnimationFrame(state.animId);
-    stopAlarm();
-    clearInterval(state.integrityCheckInterval);
-    
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    updateUI(false);
-    const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
-    const reason = isAuto ? "時間到" : "手動終止";
-    logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-    
-    restartCameraFeed(); // ✅ 關鍵修復：停止系統後重啟相機
-}
+        function stopSystem(isAuto = false) {
+            state.isRunning = false;
+            state.referenceDescriptor = null;
+            cancelAnimationFrame(state.animId);
+            stopAlarm();
+            clearInterval(state.integrityCheckInterval);
+            
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            updateUI(false);
+
+            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+            const reason = isAuto ? "時間到" : "手動終止";
+            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+        }
 
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
@@ -662,78 +616,52 @@ async function attemptStopSystem() {
         }
 
         // --- MAIN LOOP ---
-    async function loop() {
-    // 永遠先畫即時影像，防止畫面卡住
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (video.readyState >= 2) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    }
+        async function loop() {
+            if (!state.isRunning) return;
+            if (state.isToilet) { state.animId = requestAnimationFrame(loop); return; }
 
-    // 如果沒在運行或如廁 → 只顯示畫面，不做事
-    if (!state.isRunning || state.isToilet) {
-        state.animId = requestAnimationFrame(loop);
-        return;
-    }
+            const now = Date.now();
+            const timeLeft = state.sessionEndTime - now;
+            updateTimer(timeLeft);
 
-    // ====== 以下才是真正監控邏輯（只在運行時執行）======
-    const now = Date.now();
-    const timeLeft = state.sessionEndTime - now;
+            if (timeLeft <= 0) {
+                stopSystem(true);
+                alert("Time's Up!");
+                return;
+            }
 
-    // 時間到
-    if (timeLeft <= 0) {
-        stopSystem(true);
-        alert("Time's Up!");
-        return;
-    }
+            if (now - state.lastProcessTime > PROCESS_INTERVAL) {
+                state.lastProcessTime = now;
+                state.currentMotionScore = calculateMotion();
+                
+                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+                state.currentDetections = detections;
 
-    updateTimer(timeLeft);
+                let targetFound = false;
+                state.currentDetections.forEach(det => {
+                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                    det.isMatch = (distance < config.matchThreshold);
+                    if (det.isMatch) targetFound = true;
+                });
 
-    // 每 200ms 偵測一次（省電又流暢）
-    if (now - state.lastProcessTime > PROCESS_INTERVAL) {
-        state.lastProcessTime = now;
+                state.isTargetPresent = targetFound;
+                checkStatus(state.isTargetPresent, state.currentMotionScore, now);
+            }
 
-        // 運動偵測
-        state.currentMotionScore = calculateMotion();
-
-        // 人臉偵測 + 比對
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks()
-            .withFaceDescriptors();
-
-        state.currentDetections = detections;
-        let targetFound = false;
-
-        if (state.referenceDescriptor) {
-            detections.forEach(det => {
-                const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                det.isMatch = distance < config.matchThreshold;
-                if (det.isMatch) targetFound = true;
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            state.currentDetections.forEach(det => {
+                const box = det.detection.box;
+                const drawBox = new faceapi.draw.DrawBox(box, { 
+                    label: det.isMatch ? "TARGET" : "UNKNOWN",
+                    boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
+                    lineWidth: 2
+                });
+                drawBox.draw(canvas);
             });
+
+            updateTimeoutBar(now);
+            state.animId = requestAnimationFrame(loop);
         }
-
-        state.isTargetPresent = targetFound;
-        checkStatus(state.isTargetPresent, state.currentMotionScore, now);
-    }
-
-    // ====== 畫所有人臉框框（綠框 TARGET / 紅框 UNKNOWN）======
-    state.currentDetections.forEach(det => {
-        const box = det.detection.box;
-        const drawBox = new faceapi.draw.DrawBox(box, {
-            label: det.isMatch ? "TARGET" : "UNKNOWN",
-            boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
-            lineWidth: 3,
-            labelBackgroundColor: "rgba(0,0,0,0.7)",
-            fontSize: 20
-        });
-        drawBox.draw(canvas);
-    });
-
-    // 超時條
-    updateTimeoutBar(now);
-
-    // 繼續下一幀
-    state.animId = requestAnimationFrame(loop);
-}
 
         function checkStatus(targetPresent, motionScore, now) {
             if (targetPresent && motionScore > config.motionThreshold) {
@@ -755,7 +683,7 @@ async function attemptStopSystem() {
             if (elapsed > config.timeoutMs) {
                 let reason = "";
                 if (!state.isTargetPresent) reason = "目標丟失 / 非本人";
-                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
+                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像 (照片攻擊)";
 
                 if (reason) triggerAlarm(`違規: ${reason}`);
             }
@@ -816,56 +744,23 @@ async function attemptStopSystem() {
         }
 
         // --- ANTI-TAMPER ---
-       function startIntegrityCheck() {
-    // 清除可能存在的舊interval
-    if(state.integrityCheckInterval) clearInterval(state.integrityCheckInterval);
-    
-    // 檢查視頻流是否正常
-    state.integrityCheckInterval = setInterval(() => {
-        if (!state.isRunning) return;
-        
-        // 檢查視頻流是否中斷
-        if (video.readyState < 2) {
-            logToCloud("SEVERE", "視頻流中斷", true);
-            triggerAlarm("視頻流中斷");
-            state.hasViolated = true;
-        }
-        
-        // 檢查canvas是否被篡改(像素值異常)
-        if (state.isTargetPresent) {
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            let nonZeroCount = 0;
-            for (let i = 0; i < data.length; i += 4) {
-                if (data[i] > 10 || data[i+1] > 10 || data[i+2] > 10) {
-                    nonZeroCount++;
+        function startIntegrityCheck() {
+            state.integrityCheckInterval = setInterval(() => {
+                if (!localStorage.getItem('monitor_active')) {
+                    logToCloud("SEVERE", "Local Storage 遭篡改", true);
+                    localStorage.setItem('monitor_active', 'true');
+                    state.hasViolated = true;
                 }
-            }
-            // 如果畫布大部分是黑色，可能表示被覆蓋或篡改
-            if (nonZeroCount < (canvas.width * canvas.height * 0.1)) {
-                logToCloud("SEVERE", "檢測到畫面異常", true);
+            }, 2000);
+        }
+
+        document.addEventListener("visibilitychange", () => {
+            if (state.isRunning && !state.isToilet && document.hidden) {
+                logToCloud("SEVERE", "分頁切換 / 隱藏", true);
+                triggerAlarm("分頁切換 / 隱藏");
                 state.hasViolated = true;
             }
-        }
-    }, 5000);
-}
-
-
-        async function verifyAdminPassword(inputPassword) {
-    // 每次驗證時從Firebase獲取最新密碼
-    try {
-        const snapshot = await database.ref('admin/password').once('value');
-        if (snapshot.exists()) {
-            return inputPassword === snapshot.val();
-        }
-        return false;
-    } catch (error) {
-        console.error("密碼驗證失敗:", error);
-        return false;
-    }
-}
-
-
+        });
 
         // --- HELPERS ---
         function calculateMotion() {
@@ -892,31 +787,23 @@ async function attemptStopSystem() {
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-  async function attemptToggleSettings() {
-    const panel = document.getElementById('settings-panel');
+        async function attemptToggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            
+            if (!panel.classList.contains('open')) {
+                const pass = await showInputPrompt("請輸入管理員密碼", true);
+                if(pass === null) return; 
 
-    if (!panel.classList.contains('open')) {
-        const pass = await showInputPrompt("請輸入管理員密碼", true);
-        
-        if (pass === null) {
-            alert("已取消，頁面即將重新整理");
-            setTimeout(() => location.reload(), 1200);
-            return;
+                if (pass === adminPassword) {
+                    toggleSettings();
+                } else {
+                    alert("密碼錯誤 (Invalid Password)");
+                }
+            } else {
+                toggleSettings();
+            }
         }
 
-        const isValid = await verifyAdminPassword(pass);
-        if (!isValid) {
-            alert("密碼錯誤！頁面即將重新整理");
-            setTimeout(() => location.reload(), 1500);
-            return;
-        }
-    }
-    
-    // 只有密碼正確才允許開關設定面板
-    toggleSettings();
-}
-
-        
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
             panel.classList.toggle('open');
@@ -964,22 +851,16 @@ async function attemptStopSystem() {
                 }
             }, 1000);
 
- document.getElementById('btn-return-early').onclick = () => {
-    clearInterval(tInt);
-    document.getElementById('toilet-screen').style.display = 'none';
-    state.isToilet = false;
-    state.lastLiveTimestamp = Date.now();
-    restartCameraFeed(); // ✅ 關鍵修復：返回時重啟相機
-};
+            document.getElementById('btn-return-early').onclick = () => {
+                clearInterval(tInt);
+                toiletScreen.style.display = 'none';
+                state.isToilet = false;
+                state.lastLiveTimestamp = Date.now();
+                loop();
+            };
         }
 
-      window.addEventListener('beforeunload', (e) => {
-    if(state.isRunning && !state.isToilet) {
-        e.preventDefault();
-        e.returnValue = '監控會談進行中，確定要離開嗎？';
-        // 不再設置LOCAL STORAGE
-    }
-});
+        window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
 
     </script>
 </body>
