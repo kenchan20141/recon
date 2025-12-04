@@ -403,7 +403,7 @@
             if(state.isAiReady) document.getElementById('btn-start').disabled = false;
         }
 
-       function showInputPrompt(message, isPassword = false) {
+    function showInputPrompt(message, isPassword = false) {
     return new Promise((resolve) => {
         const modal = document.getElementById('input-modal');
         const msgEl = document.getElementById('modal-msg');
@@ -413,33 +413,82 @@
 
         msgEl.innerText = message;
         inputEl.value = '';
-        inputEl.type = isPassword ? 'password' : 'text'; 
+        inputEl.type = isPassword ? 'password' : 'text';
         inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
         inputEl.setAttribute('autocomplete', 'off');
 
         modal.classList.add('active');
         
-        // 关键修复：不在移动设备上自动聚焦输入框
-        if (!/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-            setTimeout(() => inputEl.focus(), 300);
-        }
+        // 關鍵修復 1: 在 iOS 上強制允許點擊輸入框時彈出鍵盤
+        inputEl.readOnly = true; // 先設為只讀防止自動聚焦
+        setTimeout(() => {
+            inputEl.readOnly = false; // 延遲後允許編輯
+            // 不自動聚焦，等待用戶主動點擊
+        }, 300);
+        
+        let valueSubmitted = false;
         
         const close = (val) => {
+            if (valueSubmitted) return; // 防止重複提交
+            valueSubmitted = true;
             modal.classList.remove('active');
-            confirmBtn.onclick = null;
-            cancelBtn.onclick = null;
-            inputEl.onkeydown = null;
-            // 严格验证：空值一律视为取消
-            resolve(val === null || val.trim() === "" ? null : val.trim());
+            // 移除所有事件監聽器防止記憶體洩漏
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+            inputEl.removeEventListener('input', handleInput);
+            inputEl.removeEventListener('change', handleInput);
+            inputEl.removeEventListener('blur', handleBlur);
+            if(window.TouchEvent) {
+                confirmBtn.removeEventListener('touchend', handleConfirm);
+                cancelBtn.removeEventListener('touchend', handleCancel);
+            }
+            
+            // 關鍵修復 2: 確保返回值為 null 而非空字符串
+            resolve(val && val.trim() !== "" ? val.trim() : null);
         };
 
-        confirmBtn.onclick = () => close(inputEl.value);
-        cancelBtn.onclick = () => close(null);
-        
-        inputEl.onkeydown = (e) => {
-            if (e.key === 'Enter') close(inputEl.value);
-            if (e.key === 'Escape') close(null);
+        // 關鍵修復 3: 添加多種事件處理，兼容 iOS 虛擬鍵盤
+        const handleConfirm = () => close(inputEl.value);
+        const handleCancel = () => close(null);
+        const handleInput = () => {
+            // iOS 虛擬鍵盤輸入後立即驗證
+            setTimeout(() => {
+                if(inputEl.value.trim() !== "") {
+                    confirmBtn.disabled = false;
+                } else {
+                    confirmBtn.disabled = true;
+                }
+            }, 0);
         };
+        const handleBlur = () => {
+            // 當輸入框失焦時，更新按鈕狀態
+            setTimeout(handleInput, 200);
+        };
+
+        confirmBtn.addEventListener('click', handleConfirm);
+        cancelBtn.addEventListener('click', handleCancel);
+        inputEl.addEventListener('input', handleInput);
+        inputEl.addEventListener('change', handleInput);
+        inputEl.addEventListener('blur', handleBlur);
+        confirmBtn.disabled = true; // 初始禁用確認按鈕
+        
+        // 關鍵修復 4: 添加 touch 事件支持 iOS
+        if(window.TouchEvent) {
+            confirmBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleConfirm(); });
+            cancelBtn.addEventListener('touchend', (e) => { e.preventDefault(); handleCancel(); });
+            // 防止 iOS 雙擊縮放
+            inputEl.addEventListener('touchstart', () => {
+                inputEl.focus();
+            });
+        }
+        
+        // 關鍵修復 5: 錯誤處理 - 超時自動關閉
+        setTimeout(() => {
+            if(!valueSubmitted) {
+                console.log("Modal timeout - auto closing");
+                close(null);
+            }
+        }, 60000); // 60秒超時
     });
 }
         // --- CORE STATE ---
@@ -583,45 +632,55 @@
             loop();
         }
 
-       async function attemptStopSystem() {
-    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-    // 严格验证：空值或取消直接返回
-    if(!pass) return;
-    
-    // 防止空密码通过验证
-    if (pass.trim() === "") {
-        alert("密碼不得為空");
-        return;
-    }
-
-    if (pass === adminPassword) {
-        stopSystem(false);
-    } else {
-        alert("密碼錯誤 (Invalid Password)");
+     async function attemptStopSystem() {
+    try {
+        const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+        
+        // 關鍵修復 6: 嚴格檢查返回值
+        if(pass === null || pass === undefined) {
+            console.log("Password input cancelled or empty");
+            return;
+        }
+        
+        console.log("Submitted password length:", pass.length, "Expected:", adminPassword.length);
+        
+        if (pass === adminPassword) {
+            stopSystem(false);
+        } else {
+            // 關鍵修復 7: 顯示詳細錯誤訊息幫助調試
+            alert(`密碼錯誤!\n輸入: "${pass}"\n長度: ${pass.length}\n系統密碼長度: ${adminPassword.length}`);
+        }
+    } catch (error) {
+        console.error("Password verification error:", error);
+        alert("驗證過程發生錯誤，請重試");
     }
 }
 
 async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
     
-    if (!panel.classList.contains('open')) {
-        const pass = await showInputPrompt("請輸入管理員密碼", true);
-        // 严格验证：空值或取消直接返回
-        if(!pass) return;
-        
-        // 防止空密码通过验证
-        if (pass.trim() === "") {
-            alert("密碼不得為空");
-            return;
-        }
-
-        if (pass === adminPassword) {
-            toggleSettings();
+    try {
+        if (!panel.classList.contains('open')) {
+            const pass = await showInputPrompt("請輸入管理員密碼", true);
+            
+            if(pass === null || pass === undefined) {
+                console.log("Password input cancelled or empty");
+                return;
+            }
+            
+            console.log("Settings password attempt - length:", pass.length);
+            
+            if (pass === adminPassword) {
+                toggleSettings();
+            } else {
+                alert(`密碼錯誤!\n輸入: "${pass}"\n長度: ${pass.length}`);
+            }
         } else {
-            alert("密碼錯誤 (Invalid Password)");
+            toggleSettings();
         }
-    } else {
-        toggleSettings();
+    } catch (error) {
+        console.error("Settings password error:", error);
+        alert("密碼驗證失敗，請重試");
     }
 }
 
