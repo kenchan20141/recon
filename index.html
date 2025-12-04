@@ -135,15 +135,16 @@
             font-size: 1.1rem;
         }
         
-        .setting-row input {
-            background: #050505; 
-            border: 1px solid var(--primary-color); 
-            color: var(--primary-color);
-            padding: 8px; width: 90px; text-align: center; 
-            font-family: var(--font-main);
-            font-size: 1.2rem; 
-            font-weight: bold;
-        }
+       .setting-row input {
+    background: #050505; 
+    border: 1px solid var(--primary-color); 
+    color: var(--primary-color);
+    padding: 8px; width: 90px; text-align: center; 
+    /* 同樣使用系統字體 */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.2rem; 
+    font-weight: bold;
+}
         .setting-row input:focus { box-shadow: 0 0 15px var(--primary-color); outline: none; }
 
         .log-box { margin-top: 20px; border-top: 2px solid #333; padding-top: 10px; }
@@ -191,11 +192,16 @@
             background: #0a0a0a; border: 2px solid var(--primary-color);
             padding: 30px; width: 90%; max-width: 400px; text-align: center;
         }
-        .modal-input {
-            width: 100%; padding: 12px; margin-bottom: 25px;
-            background: #111; border: 1px solid #333; border-left: 4px solid var(--primary-color);
-            color: #fff; font-family: var(--font-main); font-size: 1.2rem; text-align: center;
-        }
+       .modal-input {
+    width: 100%; padding: 12px; margin-bottom: 25px;
+    background: #111; border: 1px solid #333; border-left: 4px solid var(--primary-color);
+    color: #fff; 
+    /* 關鍵修改：使用系統默認字體確保密碼輸入可靠性 */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    font-size: 1.2rem; 
+    text-align: center;
+    letter-spacing: 0.5px; /* 改善字符可讀性 */
+}
         .modal-btns { display: flex; gap: 15px; }
 
         /* COPYRIGHT FOOTER */
