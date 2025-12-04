@@ -580,30 +580,45 @@
         }
 
         async function attemptStopSystem() {
-            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; 
-
-            if (pass === adminPassword) {
-                stopSystem(false);
-            } else {
-                alert("密碼錯誤 (Invalid Password)");
-            }
+    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+    if(pass === null) return; 
+    
+    // 重新從 Firebase 獲取最新密碼，避免使用可能過期的緩存
+    try {
+        const snapshot = await database.ref('admin/password').once('value');
+        const currentAdminPassword = snapshot.exists() ? snapshot.val() : "";
+        
+        if (pass === currentAdminPassword) {
+            stopSystem(false);
+        } else {
+            alert("密碼錯誤 (Invalid Password)");
+            // 清除可能已損壞的本地狀態
+            localStorage.removeItem('monitor_active');
         }
+    } catch (error) {
+        console.error("Firebase password check failed:", error);
+        alert("驗證服務暫時不可用，請重試或清除瀏覽器緩存後再試");
+        localStorage.removeItem('monitor_active');
+    }
+}
 
-        function stopSystem(isAuto = false) {
-            state.isRunning = false;
-            state.referenceDescriptor = null;
-            cancelAnimationFrame(state.animId);
-            stopAlarm();
-            clearInterval(state.integrityCheckInterval);
-            
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            updateUI(false);
+       function stopSystem(isAuto = false) {
+    state.isRunning = false;
+    state.referenceDescriptor = null;
+    cancelAnimationFrame(state.animId);
+    stopAlarm();
+    clearInterval(state.integrityCheckInterval);
+    
+    // 清除本地儲存的狀態
+    localStorage.removeItem('monitor_active');
+    
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    updateUI(false);
 
-            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
-            const reason = isAuto ? "時間到" : "手動終止";
-            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-        }
+    const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+    const reason = isAuto ? "時間到" : "手動終止";
+    logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+}
 
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
@@ -745,22 +760,54 @@
 
         // --- ANTI-TAMPER ---
         function startIntegrityCheck() {
-            state.integrityCheckInterval = setInterval(() => {
-                if (!localStorage.getItem('monitor_active')) {
-                    logToCloud("SEVERE", "Local Storage 遭篡改", true);
-                    localStorage.setItem('monitor_active', 'true');
-                    state.hasViolated = true;
-                }
-            }, 2000);
-        }
-
-        document.addEventListener("visibilitychange", () => {
-            if (state.isRunning && !state.isToilet && document.hidden) {
-                logToCloud("SEVERE", "分頁切換 / 隱藏", true);
-                triggerAlarm("分頁切換 / 隱藏");
-                state.hasViolated = true;
+    state.integrityCheckInterval = setInterval(async () => {
+        const isActive = localStorage.getItem('monitor_active');
+        
+        if (state.isRunning && !isActive) {
+            logToCloud("SEVERE", "Local Storage 遭篡改或已清除", true);
+            // 不自動重設狀態，而是終止系統
+            if (state.isRunning) {
+                stopSystem(false);
+                alert("安全警報：系統狀態已被修改，監控已終止");
             }
-        });
+        }
+    }, 2000);
+}
+
+       document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState === 'visible' && state.isRunning) {
+        // 檢查 localStorage 狀態是否一致
+        const isActive = localStorage.getItem('monitor_active');
+        if (!isActive && state.isRunning) {
+            // 狀態不一致，要求重新驗證
+            const pass = await showInputPrompt("系統檢測到狀態異常，請重新輸入密碼以繼續監控", true);
+            
+            try {
+                const snapshot = await database.ref('admin/password').once('value');
+                const currentAdminPassword = snapshot.exists() ? snapshot.val() : "";
+                
+                if (pass !== currentAdminPassword) {
+                    stopSystem(false);
+                    alert("驗證失敗，監控已終止");
+                    return;
+                }
+                // 重新設置狀態
+                localStorage.setItem('monitor_active', 'true');
+            } catch (error) {
+                console.error("Re-authentication failed:", error);
+                stopSystem(false);
+                alert("驗證服務不可用，監控已終止");
+            }
+        }
+    }
+    
+    // 原有的隱藏檢測邏輯
+    if (state.isRunning && !state.isToilet && document.hidden) {
+        logToCloud("SEVERE", "分頁切換 / 隱藏", true);
+        triggerAlarm("分頁切換 / 隱藏");
+        state.hasViolated = true;
+    }
+});
 
         // --- HELPERS ---
         function calculateMotion() {
@@ -787,22 +834,33 @@
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-        async function attemptToggleSettings() {
-            const panel = document.getElementById('settings-panel');
+       async function attemptToggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    
+    if (!panel.classList.contains('open')) {
+        const pass = await showInputPrompt("請輸入管理員密碼", true);
+        if(pass === null) return; 
+        
+        // 同樣地，重新獲取最新密碼
+        try {
+            const snapshot = await database.ref('admin/password').once('value');
+            const currentAdminPassword = snapshot.exists() ? snapshot.val() : "";
             
-            if (!panel.classList.contains('open')) {
-                const pass = await showInputPrompt("請輸入管理員密碼", true);
-                if(pass === null) return; 
-
-                if (pass === adminPassword) {
-                    toggleSettings();
-                } else {
-                    alert("密碼錯誤 (Invalid Password)");
-                }
-            } else {
+            if (pass === currentAdminPassword) {
                 toggleSettings();
+            } else {
+                alert("密碼錯誤 (Invalid Password)");
+                localStorage.removeItem('monitor_active');
             }
+        } catch (error) {
+            console.error("Firebase password check failed:", error);
+            alert("驗證服務暫時不可用，請重試或清除瀏覽器緩存後再試");
+            localStorage.removeItem('monitor_active');
         }
+    } else {
+        toggleSettings();
+    }
+}
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
