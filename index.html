@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -863,17 +864,12 @@ function checkStatus(targetPresent, motionScore, now) {
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-async function attemptToggleSettings() {
-    const panel = document.getElementById('settings-panel');
-    
-    // 如果系統正在運行，完全禁止訪問設定
-    if (state.isRunning) {
-        alert("監控中無法修改設定 / Settings locked during monitoring");
-        return;
-    }
-    
-    // 系統未運行時，直接切換設定面板，不需要密碼
-    toggleSettings();
+        async function attemptToggleSettings() {
+
+// 在這兩個函數開頭添加
+if (!navigator.onLine) {
+  alert("需要網路連線進行驗證");
+  return;
 }
 
             
