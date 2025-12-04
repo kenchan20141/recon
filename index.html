@@ -380,21 +380,23 @@
 
 function restartCameraFeed() {
     cancelAnimationFrame(state.animId);
-    // 保持相機流運行但停止AI處理
-    if (!state.isRunning && !state.isToilet) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        // 持續繪製原始視頻流，即使AI未運行
-        const drawFrame = () => {
-            if (!state.isRunning && !state.isToilet) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                state.animId = requestAnimationFrame(drawFrame);
-            }
-        };
-        drawFrame();
-    } else {
-        loop(); // 繼續正常運行
+    
+    if (state.isRunning || state.isToilet) {
+        state.animId = requestAnimationFrame(loop);
+        return;
     }
+    
+    const drawFrame = () => {
+        if (!state.isRunning && !state.isToilet) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (video.readyState >= 2) {
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            }
+            state.animId = requestAnimationFrame(drawFrame);
+        }
+    };
+    
+    drawFrame();
 }
 
         
@@ -567,37 +569,37 @@ function restartCameraFeed() {
             startFaceRegistration();
         }
 
-        async function startFaceRegistration() {
-            const regOverlay = document.getElementById('reg-overlay');
-            const regCount = document.getElementById('reg-countdown');
-            regOverlay.style.display = 'block';
-            
-            let count = 3;
+       async function startFaceRegistration() {
+    const regOverlay = document.getElementById('reg-overlay');
+    const regCount = document.getElementById('reg-countdown');
+    regOverlay.style.display = 'block';
+    
+    let count = 3;
+    regCount.innerText = count;
+    
+    const timer = setInterval(async () => {
+        count--;
+        if(count > 0) {
             regCount.innerText = count;
+        } else {
+            clearInterval(timer);
+            regCount.innerText = "LOCKING...";
             
-            const timer = setInterval(async () => {
-                count--;
-                if(count > 0) {
-                    regCount.innerText = count;
-                } else {
-                    clearInterval(timer);
-                    regCount.innerText = "LOCKING...";
-                    
-                    const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-                    
-                   if (detection) {
-    state.referenceDescriptor = detection.descriptor;
-    regOverlay.style.display = 'none';
-    startSystem();
-} else {
-    alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
-    regOverlay.style.display = 'none';
-    document.getElementById('btn-start').disabled = false;
-    restartCameraFeed(); // 關鍵修復：重新啟動相機流
-}
-                }
-            }, 1000);
+            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+            
+            if (detection) {
+                state.referenceDescriptor = detection.descriptor;
+                regOverlay.style.display = 'none';
+                startSystem();
+            } else {
+                alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
+                regOverlay.style.display = 'none';
+                document.getElementById('btn-start').disabled = false;
+                restartCameraFeed(); // 關鍵修復：重新啟動相機流
+            }
         }
+    }, 1000);
+}
 
         // --- SYSTEM CONTROL ---
         function startSystem() {
@@ -629,20 +631,22 @@ async function attemptStopSystem() {
     }
 }
 
-        function stopSystem(isAuto = false) {
-            state.isRunning = false;
-            state.referenceDescriptor = null;
-            cancelAnimationFrame(state.animId);
-            stopAlarm();
-            clearInterval(state.integrityCheckInterval);
-            
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            updateUI(false);
+       function stopSystem(isAuto = false) {
+    state.isRunning = false;
+    state.referenceDescriptor = null;
+    cancelAnimationFrame(state.animId);
+    stopAlarm();
+    clearInterval(state.integrityCheckInterval);
+    
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    updateUI(false);
 
-            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
-            const reason = isAuto ? "時間到" : "手動終止";
-            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-        }
+    const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+    const reason = isAuto ? "時間到" : "手動終止";
+    logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+    
+    restartCameraFeed(); // 關鍵修復：停止系統後重啟相機
+}
 
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
@@ -655,10 +659,12 @@ async function attemptStopSystem() {
         }
 
         // --- MAIN LOOP ---
-      async function loop() {
+     async function loop() {
     // 確保視頻持續顯示，即使系統未運行
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (video.readyState >= 2) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
     
     // 系統未運行或在廁所模式時，只需持續顯示視頻
     if (!state.isRunning || state.isToilet) {
@@ -870,7 +876,7 @@ async function attemptStopSystem() {
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-     async function attemptToggleSettings() {
+    async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
     
     if (!panel.classList.contains('open')) {
@@ -940,13 +946,13 @@ async function attemptStopSystem() {
                 }
             }, 1000);
 
-            document.getElementById('btn-return-early').onclick = () => {
-                clearInterval(tInt);
-                toiletScreen.style.display = 'none';
-                state.isToilet = false;
-                state.lastLiveTimestamp = Date.now();
-                loop();
-            };
+           document.getElementById('btn-return-early').onclick = () => {
+    clearInterval(tInt);
+    document.getElementById('toilet-screen').style.display = 'none';
+    state.isToilet = false;
+    state.lastLiveTimestamp = Date.now();
+    restartCameraFeed(); // 關鍵修復
+};
         }
 
       window.addEventListener('beforeunload', (e) => {
