@@ -569,33 +569,34 @@ function restartCameraFeed() {
             startFaceRegistration();
         }
 
-     async function startFaceRegistration() {
+ async function startFaceRegistration() {
     const regOverlay = document.getElementById('reg-overlay');
     const regCount = document.getElementById('reg-countdown');
     regOverlay.style.display = 'block';
-    
+
     let count = 3;
     regCount.innerText = count;
-    
+
     const timer = setInterval(async () => {
         count--;
-        if(count > 0) {
+        if (count > 0) {
             regCount.innerText = count;
         } else {
             clearInterval(timer);
             regCount.innerText = "LOCKING...";
-            
-            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-            
-            if (detection) {
+
+            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+
+            if (detection && detection.descriptor) {
                 state.referenceDescriptor = detection.descriptor;
                 regOverlay.style.display = 'none';
                 startSystem();
             } else {
-                alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
                 regOverlay.style.display = 'none';
-                document.getElementById('btn-start').disabled = false;
-                restartCameraFeed(); // ✅ 關鍵修復：重新啟動相機流
+                alert("未偵測到臉部，請確保正對鏡頭並有足夠光線。\n頁面即將重新整理...");
+                setTimeout(() => location.reload(), 1500);  // 1.5 秒後自動重整
             }
         }
     }, 1000);
@@ -617,16 +618,20 @@ function restartCameraFeed() {
       // 在attemptStopSystem函數中
 async function attemptStopSystem() {
     const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-    if(pass === null) {
-        restartCameraFeed(); // ✅ 用戶取消時重啟相機
-        return; 
+    
+    if (pass === null) {
+        // 用戶按取消
+        alert("已取消終止操作，頁面即將重新整理");
+        setTimeout(() => location.reload(), 1200);
+        return;
     }
+
     const isValid = await verifyAdminPassword(pass);
     if (isValid) {
         stopSystem(false);
     } else {
-        alert("密碼錯誤 (Invalid Password)");
-        restartCameraFeed(); // ✅ 驗證失敗時重啟相機
+        alert("密碼錯誤！頁面即將重新整理");
+        setTimeout(() => location.reload(), 1500);
     }
 }
 
@@ -876,26 +881,29 @@ async function attemptStopSystem() {
         // --- SETTINGS (PASSWORD PROTECTED) ---
   async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
-    
+
     if (!panel.classList.contains('open')) {
         const pass = await showInputPrompt("請輸入管理員密碼", true);
-        if(pass === null) {
-            restartCameraFeed(); // ✅ 用戶取消時重啟相機
-            return; 
+        
+        if (pass === null) {
+            alert("已取消，頁面即將重新整理");
+            setTimeout(() => location.reload(), 1200);
+            return;
         }
+
         const isValid = await verifyAdminPassword(pass);
-        if (isValid) {
-            toggleSettings();
-        } else {
-            alert("密碼錯誤 (Invalid Password)");
-            restartCameraFeed(); // ✅ 驗證失敗時重啟相機
+        if (!isValid) {
+            alert("密碼錯誤！頁面即將重新整理");
+            setTimeout(() => location.reload(), 1500);
+            return;
         }
-    } else {
-        toggleSettings();
-        restartCameraFeed(); // ✅ 關閉設定面板時重啟相機
     }
+    
+    // 只有密碼正確才允許開關設定面板
+    toggleSettings();
 }
 
+        
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
             panel.classList.toggle('open');
