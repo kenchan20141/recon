@@ -430,16 +430,19 @@
             resolve(cleanedVal);
         };
 
-        confirmBtn.onclick = () => close(inputEl.value);
+        confirmBtn.onclick = () => {
+    // 在移動設備上確保獲取到最新的輸入值
+    setTimeout(() => close(inputEl.value), 50);
+};
         cancelBtn.onclick = () => close(null);
         
-        inputEl.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault(); // 防止 Enter 鍵加入換行
-                close(inputEl.value);
-            }
-            if (e.key === 'Escape') close(null);
-        };
+      inputEl.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+        // 在移動設備上確保獲取到最新的輸入值
+        setTimeout(() => close(inputEl.value), 50);
+    }
+    if (e.key === 'Escape') close(null);
+};
     });
 }
 
@@ -585,6 +588,11 @@
         }
 
         async function attemptStopSystem() {
+
+console.log("Input password:", pass);
+console.log("Admin password:", adminPassword);
+
+            
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
             if(pass === null) return; 
 
