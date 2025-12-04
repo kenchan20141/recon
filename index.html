@@ -203,21 +203,6 @@
         }
         .copyright-footer p { margin: 0; font-size: 14px; color: #000; font-family: sans-serif; }
         @media (max-width: 600px) { .copyright-footer p { font-size: 12px; } }
-
-
-/* 確保iOS上按鈕和輸入框正常工作 */
-.ios-device .modal-input, 
-.ios-device button {
-    cursor: pointer !important;
-    -webkit-tap-highlight-color: rgba(0,0,0,0.1);
-}
-
-.ios-device .modal-input:focus {
-    outline: 1px solid var(--primary-color) !important;
-    box-shadow: 0 0 0 2px var(--primary-color) !important;
-}
-
-        
     </style>
 </head>
 <body>
@@ -398,7 +383,6 @@ if (isIOS) {
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
-        // --- FETCH ADMIN PASSWORD ---
        function fetchAdminPassword() {
     // 如果是 iOS 設備，我們已設置硬編碼密碼，無需從 Firebase 獲取
     if (isIOS) {
@@ -457,27 +441,12 @@ if (isIOS) {
                 };
 
                 confirmBtn.onclick = () => close(inputEl.value);
-cancelBtn.onclick = () => close(null);
-// 添加觸控事件支持
-confirmBtn.addEventListener('touchend', (e) => { e.preventDefault(); close(inputEl.value); });
-cancelBtn.addEventListener('touchend', (e) => { e.preventDefault(); close(null); });
+                cancelBtn.onclick = () => close(null);
                 
-               inputEl.onkeydown = (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        close(inputEl.value);
-    }
-    if (e.key === 'Escape') {
-        e.preventDefault();
-        close(null);
-    }
-};
-
-// 添加提交表單事件以防萬一
-document.querySelector('.modal-box').onsubmit = (e) => {
-    e.preventDefault();
-    close(inputEl.value);
-};
+                inputEl.onkeydown = (e) => {
+                    if (e.key === 'Enter') close(inputEl.value);
+                    if (e.key === 'Escape') close(null);
+                };
             });
         }
 
@@ -625,7 +594,7 @@ document.querySelector('.modal-box').onsubmit = (e) => {
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
             if(pass === null) return; 
 
-            if (pass && pass.trim() === adminPassword.trim()) {
+            if (pass && (pass.trim() === adminPassword.trim() || (isIOS && pass.trim() === "chi2025"))) {
                 stopSystem(false);
             } else {
                 alert("密碼錯誤 (Invalid Password)");
@@ -836,7 +805,7 @@ document.querySelector('.modal-box').onsubmit = (e) => {
                 const pass = await showInputPrompt("請輸入管理員密碼", true);
                 if(pass === null) return; 
 
-                if (pass && (pass.trim() === adminPassword.trim() || (isIOS && pass.trim() === "chi2025"))) {
+                if (pass === adminPassword) {
                     toggleSettings();
                 } else {
                     alert("密碼錯誤 (Invalid Password)");
@@ -903,20 +872,6 @@ document.querySelector('.modal-box').onsubmit = (e) => {
         }
 
         window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
-
-        // 檢測是否為iPad並啟用特殊處理
-const isiPad = navigator.userAgent.match(/iPad/i) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-if (isiPad) {
-    document.body.classList.add('ios-device');
-    
-    // 特別針對iOS修復點擊延遲
-    document.addEventListener('touchstart', function() {}, true);
-    
-    // 修復iOS上輸入框獲取焦點的問題
-    document.getElementById('modal-input').addEventListener('touchstart', function(e) {
-        this.focus();
-    });
-}
 
     </script>
 </body>
