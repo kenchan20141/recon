@@ -402,59 +402,42 @@
         }
 
         function showInputPrompt(message, isPassword = false) {
-    return new Promise((resolve) => {
-        const modal = document.getElementById('input-modal');
-        const msgEl = document.getElementById('modal-msg');
-        const inputEl = document.getElementById('modal-input');
-        const confirmBtn = document.getElementById('modal-confirm-btn');
-        const cancelBtn = document.getElementById('modal-cancel-btn');
+            return new Promise((resolve) => {
+                const modal = document.getElementById('input-modal');
+                const msgEl = document.getElementById('modal-msg');
+                const inputEl = document.getElementById('modal-input');
+                const confirmBtn = document.getElementById('modal-confirm-btn');
+                const cancelBtn = document.getElementById('modal-cancel-btn');
 
-        msgEl.innerText = message;
-        inputEl.value = '';
-        inputEl.type = isPassword ? 'password' : 'text'; 
-        inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
+                msgEl.innerText = message;
+                inputEl.value = '';
+                inputEl.type = isPassword ? 'password' : 'text'; 
+                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
 
-        modal.classList.add('active');
-        
-        // 關鍵修復：iPad/iOS 兼容處理
-        // 不自動聚焦，但添加點擊區域來觸發鍵盤
-        setTimeout(() => {
-            inputEl.setAttribute('readonly', 'readonly');
-            inputEl.style.cursor = 'pointer';
-            
-            const focusHandler = () => {
-                inputEl.removeAttribute('readonly');
-                inputEl.style.cursor = 'text';
-                inputEl.removeEventListener('click', focusHandler);
+                modal.classList.add('active');
                 
-                // iOS 特定處理
-                if (/iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream) {
-                    inputEl.click();
-                }
-            };
-            
-            inputEl.addEventListener('click', focusHandler);
-        }, 300);
+                // --- KEYBOARD PREVENTION ---
+                // Removed the inputEl.focus() call.
+                // This ensures the virtual keyboard does NOT pop up automatically on mobile.
+                // The user must tap the input field manually.
+                
+                const close = (val) => {
+                    modal.classList.remove('active');
+                    confirmBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    inputEl.onkeydown = null;
+                    resolve(val);
+                };
 
-        const close = (val) => {
-            modal.classList.remove('active');
-            confirmBtn.onclick = null;
-            cancelBtn.onclick = null;
-            inputEl.onkeydown = null;
-            inputEl.removeAttribute('readonly');
-            inputEl.style.cursor = 'text';
-            resolve(val);
-        };
-
-        confirmBtn.onclick = () => close(inputEl.value);
-        cancelBtn.onclick = () => close(null);
-        
-        inputEl.onkeydown = (e) => {
-            if (e.key === 'Enter') close(inputEl.value);
-            if (e.key === 'Escape') close(null);
-        };
-    });
-}
+                confirmBtn.onclick = () => close(inputEl.value);
+                cancelBtn.onclick = () => close(null);
+                
+                inputEl.onkeydown = (e) => {
+                    if (e.key === 'Enter') close(inputEl.value);
+                    if (e.key === 'Escape') close(null);
+                };
+            });
+        }
 
         // --- CORE STATE ---
         const video = document.getElementById('webcam');
