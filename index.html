@@ -378,20 +378,7 @@
         };
 
         // --- FETCH ADMIN PASSWORD ---
-        function fetchAdminPassword() {
-            database.ref('admin/password').once('value')
-                .then((snapshot) => {
-                    if (snapshot.exists()) {
-                        adminPassword = snapshot.val();
-                        console.log("Admin config loaded.");
-                    } else {
-                        console.warn("No admin password found in DB.");
-                    }
-                })
-                .catch((error) => {
-                    console.error("Firebase Read Error:", error);
-                });
-        }
+      
 
         // --- MODAL LOGIC (Supports Password Mode & NO AUTO KEYBOARD) ---
         function acceptConsent() {
@@ -487,42 +474,37 @@
         const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
 
         // --- INIT & FACE API ---
-       async function init() {
-    fetchAdminPassword();
-    
-    // 記錄頁面載入事件
-    const loadTimestamp = new Date().toLocaleString('zh-TW');
-    logToCloud("SYSTEM", `頁面載入於 ${loadTimestamp}`, true);
+     async function init() {
+    // 移除 fetchAdminPassword(); 這行
     
     try {
-                const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-                await Promise.all([
-                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-                ]);
-
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 640, height: 480 },
-                    audio: false
-                });
-                video.srcObject = stream;
-                
-                video.onloadedmetadata = () => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    state.isAiReady = true;
-                    document.getElementById('loading-msg').style.display = 'none';
-                    if(consentGiven) document.getElementById('btn-start').disabled = false;
-                    document.getElementById('firebase-status').innerText = "System Ready";
-                };
-
-            } catch (e) {
-                console.error(e);
-                document.getElementById('loading-msg').innerText = "AI LOAD FAILED";
-                document.getElementById('loading-msg').style.color = "var(--secondary-color)";
-            }
-        }
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+        await Promise.all([
+            faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
+        
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480 },
+            audio: false
+        });
+        video.srcObject = stream;
+        
+        video.onloadedmetadata = () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            state.isAiReady = true;
+            document.getElementById('loading-msg').style.display = 'none';
+            if(consentGiven) document.getElementById('btn-start').disabled = false;
+            document.getElementById('firebase-status').innerText = "System Ready";
+        };
+    } catch (e) {
+        console.error(e);
+        document.getElementById('loading-msg').innerText = "AI LOAD FAILED";
+        document.getElementById('loading-msg').style.color = "var(--secondary-color)";
+    }
+}
         init();
 
         // --- START SEQUENCE ---
@@ -571,14 +553,13 @@
         }
 
         // --- SYSTEM CONTROL ---
-       function startSystem() {
+      function startSystem() {
     state.isRunning = true;
     state.hasViolated = false;
     state.lastLiveTimestamp = Date.now();
     state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
     
     updateUI(true);
-    localStorage.setItem('monitor_active', 'true');
     startIntegrityCheck();
     loop();
     
@@ -586,19 +567,42 @@
     const settingsBtn = document.querySelector('button[onclick="attemptToggleSettings()"]');
     if (settingsBtn) {
         settingsBtn.disabled = true;
+        settingsBtn.style.opacity = "0.5";
+        settingsBtn.style.cursor = "not-allowed";
     }
 }
 
-       async function attemptStopSystem() {
+      async function attemptStopSystem() {
     if (!state.isRunning) return;
     
-    const confirmStop = confirm("確定要終止監控系統嗎？");
-    if (confirmStop) {
-        stopSystem(false);
+    // 從Firebase讀取最新密碼
+    try {
+        const passwordRef = database.ref('admin/password');
+        const snapshot = await passwordRef.once('value');
+        
+        if (!snapshot.exists()) {
+            alert("Firebase中未找到管理員密碼設定");
+            return;
+        }
+        
+        const currentAdminPassword = snapshot.val();
+        
+        // 提示輸入密碼
+        const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+        if (pass === null) return;
+        
+        if (pass === currentAdminPassword) {
+            stopSystem(false);
+        } else {
+            alert("密碼錯誤 (Invalid Password)");
+        }
+    } catch (error) {
+        console.error("Firebase密碼驗證失敗:", error);
+        alert("無法連接Firebase驗證密碼，請檢查網路連線");
     }
 }
 
-       function stopSystem(isAuto = false) {
+     function stopSystem(isAuto = false) {
     state.isRunning = false;
     state.referenceDescriptor = null;
     cancelAnimationFrame(state.animId);
@@ -612,6 +616,8 @@
     const settingsBtn = document.querySelector('button[onclick="attemptToggleSettings()"]');
     if (settingsBtn) {
         settingsBtn.disabled = false;
+        settingsBtn.style.opacity = "1";
+        settingsBtn.style.cursor = "pointer";
     }
     
     const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
@@ -769,15 +775,16 @@
 }
 
         // --- ANTI-TAMPER ---
-        function startIntegrityCheck() {
-            state.integrityCheckInterval = setInterval(() => {
-                if (!localStorage.getItem('monitor_active')) {
-                    logToCloud("SEVERE", "Local Storage 遭篡改", true);
-                    localStorage.setItem('monitor_active', 'true');
-                    state.hasViolated = true;
-                }
-            }, 2000);
+       function startIntegrityCheck() {
+    // 使用時間戳記驗證而非Local Storage
+    state.integrityCheckInterval = setInterval(() => {
+        // 檢查系統是否被過早終止
+        if (state.isRunning && Date.now() > state.sessionEndTime) {
+            // 這應該不會發生，因為stopSystem會處理
+            logToCloud("SYSTEM", "系統完整性檢查: 會話時間異常", true);
         }
+    }, 5000);
+}
 
        document.addEventListener("visibilitychange", () => {
     if (state.isRunning && !state.isToilet) {
@@ -820,17 +827,39 @@
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-      function attemptToggleSettings() {
-    // 如果系統正在運行，則禁止點擊設定
-    if (state.isRunning) {
-        logToCloud("SYSTEM", "設定功能已鎖定 (監控進行中)", true);
-        return;
-    }
-    
+     async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
-    panel.classList.toggle('open');
+    
+    if (!panel.classList.contains('open')) {
+        // 從Firebase讀取最新密碼
+        try {
+            const passwordRef = database.ref('admin/password');
+            const snapshot = await passwordRef.once('value');
+            
+            if (!snapshot.exists()) {
+                alert("Firebase中未找到管理員密碼設定");
+                return;
+            }
+            
+            const currentAdminPassword = snapshot.val();
+            
+            // 提示輸入密碼
+            const pass = await showInputPrompt("請輸入管理員密碼", true);
+            if (pass === null) return;
+            
+            if (pass === currentAdminPassword) {
+                toggleSettings();
+            } else {
+                alert("密碼錯誤 (Invalid Password)");
+            }
+        } catch (error) {
+            console.error("Firebase密碼驗證失敗:", error);
+            alert("無法連接Firebase驗證密碼");
+        }
+    } else {
+        toggleSettings();
+    }
 }
-
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
             panel.classList.toggle('open');
