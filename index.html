@@ -378,6 +378,30 @@
         };
 
 
+// 新增獨立的視頻流繪製函數
+function drawVideoStream() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return requestAnimationFrame(drawVideoStream);
+}
+
+// 初始化時啟動獨立視頻流
+video.onloadedmetadata = () => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    state.isAiReady = true;
+    document.getElementById('loading-msg').style.display = 'none';
+    
+    // 始終啟動視頻流繪製
+    if (!state.videoStreamId) {
+        state.videoStreamId = drawVideoStream();
+    }
+    
+    if(consentGiven) document.getElementById('btn-start').disabled = false;
+    document.getElementById('firebase-status').innerText = "System Ready";
+};
+        
+
 function restartCameraFeed() {
     cancelAnimationFrame(state.animId);
     // 保持相機流運行但停止AI處理
@@ -479,6 +503,9 @@ function restartCameraFeed() {
             
             referenceDescriptor: null,
             isTargetPresent: false,
+
+videoStreamId: null, // 新增: 追蹤獨立視頻流
+    isCameraActive: true, // 新增: 追蹤相機是否活躍
             
             lastLiveTimestamp: 0,
             sessionEndTime: 0,
@@ -629,21 +656,22 @@ async function attemptStopSystem() {
     }
 }
 
-        function stopSystem(isAuto = false) {
-            state.isRunning = false;
-            state.referenceDescriptor = null;
-            cancelAnimationFrame(state.animId);
-            stopAlarm();
-            clearInterval(state.integrityCheckInterval);
-            
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            updateUI(false);
+       function stopSystem(isAuto = false) {
+    state.isRunning = false;
+    state.referenceDescriptor = null;
+    // 不再取消動畫幀: cancelAnimationFrame(state.animId);
+    stopAlarm();
+    clearInterval(state.integrityCheckInterval);
+    
+    // 不清除畫布，保持視頻流
+    // ctx.clearRect(0,0,canvas.width,canvas.height); // 註釋掉這行
+    
+    updateUI(false);
 
-            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
-            const reason = isAuto ? "時間到" : "手動終止";
-            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-        }
-
+    const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+    const reason = isAuto ? "時間到" : "手動終止";
+    logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+}
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
             document.getElementById('btn-stop').disabled = !active;
@@ -654,18 +682,51 @@ async function attemptStopSystem() {
             timeoutBar.style.width = active ? "100%" : "0%";
         }
 
+
+// 新增: 重啟相機流的函數
+async function restartCameraStream() {
+    try {
+        // 停止現有流
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+        }
+        
+        // 重新獲取相機權限
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: 640, height: 480 },
+            audio: false
+        });
+        
+        video.srcObject = stream;
+        
+        // 確保視頻流持續繪製
+        if (!state.videoStreamId) {
+            state.videoStreamId = drawVideoStream();
+        }
+        
+        console.log("Camera stream restarted successfully");
+        document.getElementById('text-status').innerText = "CAMERA RESTORED";
+        document.getElementById('led-status').className = "led on";
+        
+    } catch (e) {
+        console.error("Failed to restart camera:", e);
+        document.getElementById('text-status').innerText = "CAMERA ERROR: " + e.message;
+        document.getElementById('led-status').className = "led err";
+        
+        // 嘗試在5秒後再次重啟
+        setTimeout(restartCameraStream, 5000);
+    }
+}
+
+        
         // --- MAIN LOOP ---
-      async function loop() {
-    // 確保視頻持續顯示，即使系統未運行
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    // 系統未運行或在廁所模式時，只需持續顯示視頻
+   async function loop() {
+    // 僅在系統運行且不在廁所模式時進行AI處理
     if (!state.isRunning || state.isToilet) {
         state.animId = requestAnimationFrame(loop);
         return;
     }
-
+    
     const now = Date.now();
     const timeLeft = state.sessionEndTime - now;
     updateTimer(timeLeft);
@@ -676,42 +737,79 @@ async function attemptStopSystem() {
         return;
     }
 
-    if (now - state.lastProcessTime > PROCESS_INTERVAL) {
-        state.lastProcessTime = now;
-        state.currentMotionScore = calculateMotion();
-        
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks()
-            .withFaceDescriptors();
-        state.currentDetections = detections;
+    try {
+        if (now - state.lastProcessTime > PROCESS_INTERVAL) {
+            state.lastProcessTime = now;
+            state.currentMotionScore = calculateMotion();
+            
+            const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+                .withFaceLandmarks()
+                .withFaceDescriptors();
+            state.currentDetections = detections;
 
-        let targetFound = false;
-        if (state.referenceDescriptor) { // 確保 referenceDescriptor 存在
-            state.currentDetections.forEach(det => {
-                const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                det.isMatch = (distance < config.matchThreshold);
-                if (det.isMatch) targetFound = true;
-            });
+            let targetFound = false;
+            if (state.referenceDescriptor) {
+                state.currentDetections.forEach(det => {
+                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                    det.isMatch = (distance < config.matchThreshold);
+                    if (det.isMatch) targetFound = true;
+                });
+            }
+
+            state.isTargetPresent = targetFound;
+            checkStatus(state.isTargetPresent, state.currentMotionScore, now);
         }
 
-        state.isTargetPresent = targetFound;
-        checkStatus(state.isTargetPresent, state.currentMotionScore, now);
-    }
-
-    // 在視頻上疊加繪製檢測框
-    state.currentDetections.forEach(det => {
-        const box = det.detection.box;
-        const drawBox = new faceapi.draw.DrawBox(box, { 
-            label: det.isMatch ? "TARGET" : "UNKNOWN",
-            boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
-            lineWidth: 2
+        // 僅繪製檢測框，不重新繪製整個視頻
+        state.currentDetections.forEach(det => {
+            const box = det.detection.box;
+            const drawBox = new faceapi.draw.DrawBox(box, { 
+                label: det.isMatch ? "TARGET" : "UNKNOWN",
+                boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
+                lineWidth: 2
+            });
+            drawBox.draw(canvas);
         });
-        drawBox.draw(canvas);
-    });
 
-    updateTimeoutBar(now);
+        updateTimeoutBar(now);
+    } catch (error) {
+        console.error("Processing error:", error);
+        // 即使發生錯誤，也不停止視頻流
+        document.getElementById('text-status').innerText = "PROCESSING ERROR: " + error.message;
+    }
+    
     state.animId = requestAnimationFrame(loop);
 }
+
+        // 處理頁面切換/返回時的相機恢復
+document.addEventListener('visibilitychange', async () => {
+    if (!document.hidden && state.isCameraActive) {
+        // 頁面重新可見時，檢查並可能重啟相機
+        if (video.readyState < 2) {
+            console.log("Page became visible, restarting camera stream");
+            await restartCameraStream();
+        }
+    }
+});
+
+// 處理視窗聚焦事件
+window.addEventListener('focus', async () => {
+    if (state.isCameraActive && video.readyState < 2) {
+        console.log("Window focused, checking camera stream");
+        await restartCameraStream();
+    }
+});
+
+        // 添加相機錯誤監聽
+video.addEventListener('error', (e) => {
+    console.error("Video stream error:", e);
+    state.isCameraActive = false;
+    document.getElementById('text-status').innerText = "CAMERA ERROR";
+    document.getElementById('led-status').className = "led err";
+    
+    // 嘗試重啟
+    setTimeout(restartCameraStream, 2000);
+});
 
         function checkStatus(targetPresent, motionScore, now) {
             if (targetPresent && motionScore > config.motionThreshold) {
