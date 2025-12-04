@@ -531,11 +531,12 @@
 
             const inputName = await showInputPrompt("SESSION ID");
             if (inputName && inputName.trim() !== "") {
-                // SECURITY: Sanitize Input before use
-                sessionId = sanitizeInput(inputName.trim());
-            } else {
-                sessionId = getDateId();
-            }
+    // 清理不可見字符後再消毒
+    const cleaned = inputName.trim().replace(/[\r\n\t\u200B-\u200D\uFEFF]/g, '');
+    sessionId = sanitizeInput(cleaned);
+} else {
+    sessionId = getDateId();
+}
             
             startFaceRegistration();
         }
