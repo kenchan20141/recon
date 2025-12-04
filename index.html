@@ -6,9 +6,7 @@
     
     <!-- SECURITY: Content Security Policy (CSP) -->
     <!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源，防止未授權的惡意腳本執行 -->
-   <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleapis.com; media-src 'self' https://actions.google.com blob: https://*.google.com; connect-src https://detector-1f676-default-rtdb.firebaseio.com https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com https://www.gstatic.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; upgrade-insecure-requests;">
-    
-    
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com https://www.gstatic.com;">
     <title>AI RECON - Secure Monitor</title>
     
     <!-- Libraries -->
@@ -135,16 +133,15 @@
             font-size: 1.1rem;
         }
         
-       .setting-row input {
-    background: #050505; 
-    border: 1px solid var(--primary-color); 
-    color: var(--primary-color);
-    padding: 8px; width: 90px; text-align: center; 
-    /* 同樣使用系統字體 */
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 1.2rem; 
-    font-weight: bold;
-}
+        .setting-row input {
+            background: #050505; 
+            border: 1px solid var(--primary-color); 
+            color: var(--primary-color);
+            padding: 8px; width: 90px; text-align: center; 
+            font-family: var(--font-main);
+            font-size: 1.2rem; 
+            font-weight: bold;
+        }
         .setting-row input:focus { box-shadow: 0 0 15px var(--primary-color); outline: none; }
 
         .log-box { margin-top: 20px; border-top: 2px solid #333; padding-top: 10px; }
@@ -192,16 +189,11 @@
             background: #0a0a0a; border: 2px solid var(--primary-color);
             padding: 30px; width: 90%; max-width: 400px; text-align: center;
         }
-       .modal-input {
-    width: 100%; padding: 12px; margin-bottom: 25px;
-    background: #111; border: 1px solid #333; border-left: 4px solid var(--primary-color);
-    color: #fff; 
-    /* 關鍵修改：使用系統默認字體確保密碼輸入可靠性 */
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-    font-size: 1.2rem; 
-    text-align: center;
-    letter-spacing: 0.5px; /* 改善字符可讀性 */
-}
+        .modal-input {
+            width: 100%; padding: 12px; margin-bottom: 25px;
+            background: #111; border: 1px solid #333; border-left: 4px solid var(--primary-color);
+            color: #fff; font-family: var(--font-main); font-size: 1.2rem; text-align: center;
+        }
         .modal-btns { display: flex; gap: 15px; }
 
         /* COPYRIGHT FOOTER */
@@ -409,129 +401,44 @@
             if(state.isAiReady) document.getElementById('btn-start').disabled = false;
         }
 
-   function showInputPrompt(message, isPassword = false) {
-    return new Promise((resolve) => {
-        const modal = document.getElementById('input-modal');
-        const msgEl = document.getElementById('modal-msg');
-        const inputEl = document.getElementById('modal-input');
-        const confirmBtn = document.getElementById('modal-confirm-btn');
-        const cancelBtn = document.getElementById('modal-cancel-btn');
+        function showInputPrompt(message, isPassword = false) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('input-modal');
+                const msgEl = document.getElementById('modal-msg');
+                const inputEl = document.getElementById('modal-input');
+                const confirmBtn = document.getElementById('modal-confirm-btn');
+                const cancelBtn = document.getElementById('modal-cancel-btn');
 
-        msgEl.innerText = message;
-        inputEl.value = '';
-        inputEl.type = isPassword ? 'password' : 'text';
-        inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
-        inputEl.setAttribute('autocomplete', 'off');
+                msgEl.innerText = message;
+                inputEl.value = '';
+                inputEl.type = isPassword ? 'password' : 'text'; 
+                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
 
-        // 關鍵修訂：添加標記以防止重複提交或解析
-        let hasResolved = false;
+                modal.classList.add('active');
+                
+                // --- KEYBOARD PREVENTION ---
+                // Removed the inputEl.focus() call.
+                // This ensures the virtual keyboard does NOT pop up automatically on mobile.
+                // The user must tap the input field manually.
+                
+                const close = (val) => {
+                    modal.classList.remove('active');
+                    confirmBtn.onclick = null;
+                    cancelBtn.onclick = null;
+                    inputEl.onkeydown = null;
+                    resolve(val);
+                };
 
-        const close = (val) => {
-            if (hasResolved) return; // 防止多次解析
-            hasResolved = true;
-            modal.classList.remove('active');
-
-            // 移除所有事件監聽器防止記憶體洩漏
-            confirmBtn.removeEventListener('click', handleConfirm);
-            cancelBtn.removeEventListener('click', handleCancel);
-            inputEl.removeEventListener('input', handleInput);
-            inputEl.removeEventListener('change', handleInput);
-            inputEl.removeEventListener('blur', handleBlur);
-
-            if(window.TouchEvent) {
-                confirmBtn.removeEventListener('touchend', handleConfirm);
-                cancelBtn.removeEventListener('touchend', handleCancel);
-            }
-            // 修訂點：確保返回值為 null 而非空字符串
-            resolve(val && val.trim() !== "" ? val.trim() : null);
-        };
-
-        // 修訂點：在按鈕點擊事件中，先獲取當前輸入值，再調用 close
-        const handleConfirm = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // 延遲獲取值，確保iPad虛擬鍵盤已關閉並更新值
-    setTimeout(() => {
-        let inputValue = inputEl.value;
-        // 額外處理iPad特有的空格/不可見字符
-        if (inputValue) {
-            inputValue = inputValue.replace(/\s+$/, '');
-        }
-        close(inputValue);
-    }, 150);
-};
-
-        const handleCancel = (e) => {
-            e.preventDefault(); // 防止默認行為
-            close(null);
-        };
-
-        const handleInput = () => {
-            // iOS 虛擬鍵盤輸入後立即驗證
-            setTimeout(() => {
-                if(inputEl.value.trim() !== "") {
-                    confirmBtn.disabled = false;
-                } else {
-                    confirmBtn.disabled = true;
-                }
-            }, 0);
-        };
-
-        const handleBlur = () => {
-            // 當輸入框失焦時，更新按鈕狀態
-            setTimeout(handleInput, 200);
-        };
-
-        confirmBtn.addEventListener('click', handleConfirm);
-        cancelBtn.addEventListener('click', handleCancel);
-        inputEl.addEventListener('input', handleInput);
-        inputEl.addEventListener('change', handleInput);
-        inputEl.addEventListener('blur', handleBlur);
-
-        confirmBtn.disabled = true; // 初始禁用確認按鈕
-
-        // 修訂點：添加 touch 事件支持 iOS，並阻止默認行為
-        if(window.TouchEvent) {
-            confirmBtn.addEventListener('touchend', handleConfirm);
-            cancelBtn.addEventListener('touchend', handleCancel);
-            // 防止 iOS 雙擊縮放
-            inputEl.addEventListener('touchstart', (e) => {
-                e.preventDefault(); // 防止可能的默認行為干擾
-                inputEl.focus();
+                confirmBtn.onclick = () => close(inputEl.value);
+                cancelBtn.onclick = () => close(null);
+                
+                inputEl.onkeydown = (e) => {
+                    if (e.key === 'Enter') close(inputEl.value);
+                    if (e.key === 'Escape') close(null);
+                };
             });
         }
 
-        modal.classList.add('active');
-
-        // 設置只讀標誌，延遲後允許編輯 (您原有的修復)
-        // iPad特殊處理
-const isiPad = /iPad|iPhone/i.test(navigator.userAgent);
-if (isiPad) {
-    inputEl.readOnly = false;
-    inputEl.addEventListener('touchstart', function() {
-        inputEl.readOnly = false;
-        setTimeout(() => inputEl.focus(), 100);
-    });
-} else {
-    inputEl.readOnly = true;
-    setTimeout(() => {
-        inputEl.readOnly = false;
-    }, 300);
-}
-
-        // 修訂點：錯誤處理 - 超時自動關閉
-        const timeoutId = setTimeout(() => {
-            if (!hasResolved) {
-                console.log("Modal timeout - auto closing");
-                close(null);
-            }
-        }, 60000); // 60秒超時
-
-        // 可選：在 close 函數中清除超時定時器
-        // 在 close 函數定義後添加這行 (或將 timeoutId 作用域調整到合適位置)
-        // clearTimeout(timeoutId); // 如果 close 在內部調用，需要確保能訪問 timeoutId
-    });
-}
         // --- CORE STATE ---
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
@@ -620,12 +527,11 @@ if (isiPad) {
 
             const inputName = await showInputPrompt("SESSION ID");
             if (inputName && inputName.trim() !== "") {
-    // 清理不可見字符後再消毒
-    const cleaned = inputName.trim().replace(/[\r\n\t\u200B-\u200D\uFEFF]/g, '');
-    sessionId = sanitizeInput(cleaned);
-} else {
-    sessionId = getDateId();
-}
+                // SECURITY: Sanitize Input before use
+                sessionId = sanitizeInput(inputName.trim());
+            } else {
+                sessionId = getDateId();
+            }
             
             startFaceRegistration();
         }
@@ -673,65 +579,16 @@ if (isiPad) {
             loop();
         }
 
-    async function attemptStopSystem() {
-    // 使用您的修改後的 showInputPrompt 函數 (確保其正確返回 null 或密碼字串)
-    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+        async function attemptStopSystem() {
+            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+            if(pass === null) return; 
 
-  // 增強空值檢測，特別處理iPad
-const isEmptyInput = (value) => {
-    if (!value) return true;
-    // 處理iPad可能添加的特殊空字符
-    const cleaned = value.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
-    return cleaned === "" || cleaned.length === 0;
-};
-
-if (isEmptyInput(pass)) {
-    console.log("Password input cancelled or empty (iPad safe check)");
-    return;
-}
-
-    // 確保密碼比較前後都去除空白
-    const trimmedPass = pass.trim();
-    const expectedPass = adminPassword ? adminPassword.trim() : "";
-
-    if (trimmedPass === expectedPass) {
-        stopSystem(false);
-    } else {
-        // 顯示錯誤提示
-        alert("密碼錯誤 (Invalid Password)");
-        console.log("Password mismatch on iPad. Input:", trimmedPass, "Expected:", expectedPass);
-    }
-}
-
-async function attemptToggleSettings() {
-    const panel = document.getElementById('settings-panel');
-    try {
-        if (!panel.classList.contains('open')) {
-            const pass = await showInputPrompt("請輸入管理員密碼", true);
-
-            // 修訂點：更嚴格地檢查返回值
-            if (pass === null || pass === undefined || pass.trim() === "") {
-                console.log("Settings password input cancelled, undefined, or empty on iPad.");
-                return;
-            }
-
-            const trimmedPass = pass.trim();
-            const expectedPass = adminPassword ? adminPassword.trim() : "";
-
-            if (trimmedPass === expectedPass) {
-                toggleSettings();
+            if (pass === adminPassword) {
+                stopSystem(false);
             } else {
                 alert("密碼錯誤 (Invalid Password)");
-                console.log("Settings password mismatch on iPad. Input:", trimmedPass, "Expected:", expectedPass);
             }
-        } else {
-            toggleSettings();
         }
-    } catch (error) {
-        console.error("Settings password error:", error);
-        alert("密碼驗證失敗，請重試");
-    }
-}
 
         function stopSystem(isAuto = false) {
             state.isRunning = false;
