@@ -401,43 +401,60 @@
             if(state.isAiReady) document.getElementById('btn-start').disabled = false;
         }
 
-        function showInputPrompt(message, isPassword = false) {
-            return new Promise((resolve) => {
-                const modal = document.getElementById('input-modal');
-                const msgEl = document.getElementById('modal-msg');
-                const inputEl = document.getElementById('modal-input');
-                const confirmBtn = document.getElementById('modal-confirm-btn');
-                const cancelBtn = document.getElementById('modal-cancel-btn');
+       function showInputPrompt(message, isPassword = false) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('input-modal');
+        const msgEl = document.getElementById('modal-msg');
+        const inputEl = document.getElementById('modal-input');
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        const cancelBtn = document.getElementById('modal-cancel-btn');
 
-                msgEl.innerText = message;
-                inputEl.value = '';
-                inputEl.type = isPassword ? 'password' : 'text'; 
-                inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
+        msgEl.innerText = message;
+        inputEl.value = '';
+        inputEl.type = isPassword ? 'password' : 'text'; 
+        inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
 
-                modal.classList.add('active');
-                
-                // --- KEYBOARD PREVENTION ---
-                // Removed the inputEl.focus() call.
-                // This ensures the virtual keyboard does NOT pop up automatically on mobile.
-                // The user must tap the input field manually.
-                
-                const close = (val) => {
-                    modal.classList.remove('active');
-                    confirmBtn.onclick = null;
-                    cancelBtn.onclick = null;
-                    inputEl.onkeydown = null;
-                    resolve(val);
-                };
+        // 添加加載狀態指示器
+        confirmBtn.disabled = false;
+        confirmBtn.innerText = "CONFIRM";
+        
+        modal.classList.add('active');
+        
+        // 防止按鈕重複點擊
+        let isProcessing = false;
+        
+        const close = (val) => {
+            if (isProcessing) return;
+            isProcessing = true;
+            
+            modal.classList.remove('active');
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+            inputEl.onkeydown = null;
+            resolve(val);
+        };
 
-                confirmBtn.onclick = () => close(inputEl.value);
-                cancelBtn.onclick = () => close(null);
-                
-                inputEl.onkeydown = (e) => {
-                    if (e.key === 'Enter') close(inputEl.value);
-                    if (e.key === 'Escape') close(null);
-                };
-            });
-        }
+        confirmBtn.onclick = () => {
+            if (inputEl.value.trim() === '') {
+                inputEl.focus();
+                return;
+            }
+            close(inputEl.value.trim());
+        };
+        
+        cancelBtn.onclick = () => close(null);
+        
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter' && inputEl.value.trim() !== '') close(inputEl.value.trim());
+            if (e.key === 'Escape') close(null);
+        };
+        
+        // 延遲聚焦，確保移動設備上不會自動彈出鍵盤
+        setTimeout(() => {
+            inputEl.focus();
+        }, 300);
+    });
+}
 
         // --- CORE STATE ---
         const video = document.getElementById('webcam');
@@ -579,11 +596,15 @@
             loop();
         }
 
-        async function attemptStopSystem() {
+      async function attemptStopSystem() {
     const pass = await showInputPrompt("請輸入密碼以終止監控", true);
     if(pass === null) return; 
     
-    // 重新從 Firebase 獲取最新密碼，避免使用可能過期的緩存
+    // 添加加載狀態
+    const originalText = document.getElementById('btn-stop').innerText;
+    document.getElementById('btn-stop').innerText = "驗證中...";
+    document.getElementById('btn-stop').disabled = true;
+    
     try {
         const snapshot = await database.ref('admin/password').once('value');
         const currentAdminPassword = snapshot.exists() ? snapshot.val() : "";
@@ -592,22 +613,38 @@
             stopSystem(false);
         } else {
             alert("密碼錯誤 (Invalid Password)");
-            // 清除可能已損壞的本地狀態
             localStorage.removeItem('monitor_active');
         }
     } catch (error) {
         console.error("Firebase password check failed:", error);
-        alert("驗證服務暫時不可用，請重試或清除瀏覽器緩存後再試");
-        localStorage.removeItem('monitor_active');
+        alert("驗證服務暫時不可用，請重試");
+    } finally {
+        // 恢復按鈕狀態
+        document.getElementById('btn-stop').innerText = originalText;
+        document.getElementById('btn-stop').disabled = !state.isRunning;
     }
 }
 
-       function stopSystem(isAuto = false) {
+      function stopSystem(isAuto = false) {
+    if (!state.isRunning) return;  // 防止重複執行
+    
     state.isRunning = false;
     state.referenceDescriptor = null;
     cancelAnimationFrame(state.animId);
     stopAlarm();
-    clearInterval(state.integrityCheckInterval);
+    
+    if (state.integrityCheckInterval) {
+        clearInterval(state.integrityCheckInterval);
+        state.integrityCheckInterval = null;
+    }
+    
+    // 清除如廁計時器（如果正在進行）
+    if (tInt) {
+        clearInterval(tInt);
+        tInt = null;
+        document.getElementById('toilet-screen').style.display = 'none';
+        state.isToilet = false;
+    }
     
     // 清除本地儲存的狀態
     localStorage.removeItem('monitor_active');
@@ -618,6 +655,10 @@
     const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
     const reason = isAuto ? "時間到" : "手動終止";
     logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+    
+    // 重置狀態
+    state.toiletVisits = 0;
+    document.getElementById('toilet-count').innerText = "0";
 }
 
         function updateUI(active) {
@@ -759,19 +800,28 @@
         }
 
         // --- ANTI-TAMPER ---
-        function startIntegrityCheck() {
-    state.integrityCheckInterval = setInterval(async () => {
+       function startIntegrityCheck() {
+    // 先清除可能存在的舊定時器
+    if (state.integrityCheckInterval) {
+        clearInterval(state.integrityCheckInterval);
+    }
+    
+    state.integrityCheckInterval = setInterval(() => {
+        if (!state.isRunning) {
+            clearInterval(state.integrityCheckInterval);
+            return;
+        }
+        
         const isActive = localStorage.getItem('monitor_active');
         
         if (state.isRunning && !isActive) {
-            logToCloud("SEVERE", "Local Storage 遭篡改或已清除", true);
-            // 不自動重設狀態，而是終止系統
-            if (state.isRunning) {
-                stopSystem(false);
-                alert("安全警報：系統狀態已被修改，監控已終止");
-            }
+            console.warn("Monitoring state mismatch detected");
+            // 只記錄異常，但不自動終止系統
+            logToCloud("SEVERE", "Local Storage 狀態異常，但系統仍在運行", false);
+            // 重新設置狀態
+            localStorage.setItem('monitor_active', 'true');
         }
-    }, 2000);
+    }, 5000);  // 降低檢查頻率
 }
 
        document.addEventListener("visibilitychange", async () => {
@@ -834,14 +884,18 @@
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-       async function attemptToggleSettings() {
+      async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
     
     if (!panel.classList.contains('open')) {
         const pass = await showInputPrompt("請輸入管理員密碼", true);
         if(pass === null) return; 
         
-        // 同樣地，重新獲取最新密碼
+        // 添加加載狀態
+        const originalText = document.querySelector('button[onclick="attemptToggleSettings()"]').innerText;
+        document.querySelector('button[onclick="attemptToggleSettings()"]').innerText = "驗證中...";
+        document.querySelector('button[onclick="attemptToggleSettings()"]').disabled = true;
+        
         try {
             const snapshot = await database.ref('admin/password').once('value');
             const currentAdminPassword = snapshot.exists() ? snapshot.val() : "";
@@ -855,7 +909,10 @@
         } catch (error) {
             console.error("Firebase password check failed:", error);
             alert("驗證服務暫時不可用，請重試或清除瀏覽器緩存後再試");
-            localStorage.removeItem('monitor_active');
+        } finally {
+            // 恢復按鈕狀態
+            document.querySelector('button[onclick="attemptToggleSettings()"]').innerText = originalText;
+            document.querySelector('button[onclick="attemptToggleSettings()"]').disabled = false;
         }
     } else {
         toggleSettings();
