@@ -442,10 +442,18 @@
 
         // 修訂點：在按鈕點擊事件中，先獲取當前輸入值，再調用 close
         const handleConfirm = (e) => {
-            e.preventDefault(); // 防止默認行為
-            const inputValue = inputEl.value; // 在點擊時立即捕獲值
-            close(inputValue);
-        };
+    e.preventDefault();
+    e.stopPropagation();
+    // 延遲獲取值，確保iPad虛擬鍵盤已關閉並更新值
+    setTimeout(() => {
+        let inputValue = inputEl.value;
+        // 額外處理iPad特有的空格/不可見字符
+        if (inputValue) {
+            inputValue = inputValue.replace(/\s+$/, '');
+        }
+        close(inputValue);
+    }, 150);
+};
 
         const handleCancel = (e) => {
             e.preventDefault(); // 防止默認行為
@@ -490,11 +498,20 @@
         modal.classList.add('active');
 
         // 設置只讀標誌，延遲後允許編輯 (您原有的修復)
-        inputEl.readOnly = true;
-        setTimeout(() => {
-             inputEl.readOnly = false;
-             // 不自動聚焦，等待用戶點擊
-        }, 300);
+        // iPad特殊處理
+const isiPad = /iPad|iPhone/i.test(navigator.userAgent);
+if (isiPad) {
+    inputEl.readOnly = false;
+    inputEl.addEventListener('touchstart', function() {
+        inputEl.readOnly = false;
+        setTimeout(() => inputEl.focus(), 100);
+    });
+} else {
+    inputEl.readOnly = true;
+    setTimeout(() => {
+        inputEl.readOnly = false;
+    }, 300);
+}
 
         // 修訂點：錯誤處理 - 超時自動關閉
         const timeoutId = setTimeout(() => {
@@ -654,12 +671,18 @@
     // 使用您的修改後的 showInputPrompt 函數 (確保其正確返回 null 或密碼字串)
     const pass = await showInputPrompt("請輸入密碼以終止監控", true);
 
-    // 修訂點：更嚴格地檢查返回值
-    if (pass === null || pass === undefined || pass.trim() === "") {
-        console.log("Password input cancelled, undefined, or empty on iPad.");
-        // 不執行任何操作，直接返回
-        return;
-    }
+  // 增強空值檢測，特別處理iPad
+const isEmptyInput = (value) => {
+    if (!value) return true;
+    // 處理iPad可能添加的特殊空字符
+    const cleaned = value.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+    return cleaned === "" || cleaned.length === 0;
+};
+
+if (isEmptyInput(pass)) {
+    console.log("Password input cancelled or empty (iPad safe check)");
+    return;
+}
 
     // 確保密碼比較前後都去除空白
     const trimmedPass = pass.trim();
