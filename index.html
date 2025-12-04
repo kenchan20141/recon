@@ -6,7 +6,9 @@
     
     <!-- SECURITY: Content Security Policy (CSP) -->
     <!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源，防止未授權的惡意腳本執行 -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com https://www.gstatic.com;">
+   <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://*.googleapis.com; media-src 'self' https://actions.google.com blob: https://*.google.com; connect-src https://detector-1f676-default-rtdb.firebaseio.com https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com https://www.gstatic.com https://oauth2.googleapis.com; frame-src https://accounts.google.com; object-src 'none'; upgrade-insecure-requests;">
+    
+    
     <title>AI RECON - Secure Monitor</title>
     
     <!-- Libraries -->
