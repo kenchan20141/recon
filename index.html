@@ -377,6 +377,27 @@
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
+
+function restartCameraFeed() {
+    cancelAnimationFrame(state.animId);
+    // 保持相機流運行但停止AI處理
+    if (!state.isRunning && !state.isToilet) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // 持續繪製原始視頻流，即使AI未運行
+        const drawFrame = () => {
+            if (!state.isRunning && !state.isToilet) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                state.animId = requestAnimationFrame(drawFrame);
+            }
+        };
+        drawFrame();
+    } else {
+        loop(); // 繼續正常運行
+    }
+}
+
+        
         // --- FETCH ADMIN PASSWORD ---
         function fetchAdminPassword() {
             database.ref('admin/password').once('value')
@@ -504,14 +525,24 @@
                 });
                 video.srcObject = stream;
                 
-                video.onloadedmetadata = () => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    state.isAiReady = true;
-                    document.getElementById('loading-msg').style.display = 'none';
-                    if(consentGiven) document.getElementById('btn-start').disabled = false;
-                    document.getElementById('firebase-status').innerText = "System Ready";
-                };
+               video.onloadedmetadata = () => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    state.isAiReady = true;
+    document.getElementById('loading-msg').style.display = 'none';
+    
+    // 始終保持相機流運行
+    const drawInitialFrame = () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (!state.isRunning) {
+            state.animId = requestAnimationFrame(drawInitialFrame);
+        }
+    };
+    drawInitialFrame();
+    
+    if(consentGiven) document.getElementById('btn-start').disabled = false;
+    document.getElementById('firebase-status').innerText = "System Ready";
+};
 
             } catch (e) {
                 console.error(e);
@@ -554,14 +585,16 @@
                     
                     const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
                     
-                    if (detection) {
-                        state.referenceDescriptor = detection.descriptor;
-                        regOverlay.style.display = 'none';
-                        startSystem();
-                    } else {
-                        alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
-                        regOverlay.style.display = 'none';
-                    }
+                   if (detection) {
+    state.referenceDescriptor = detection.descriptor;
+    regOverlay.style.display = 'none';
+    startSystem();
+} else {
+    alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
+    regOverlay.style.display = 'none';
+    document.getElementById('btn-start').disabled = false;
+    restartCameraFeed(); // 關鍵修復：重新啟動相機流
+}
                 }
             }, 1000);
         }
@@ -579,16 +612,20 @@
     loop();
 }
 
-       async function attemptStopSystem() {
+      // 在attemptStopSystem函數中
+async function attemptStopSystem() {
     const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-    if(pass === null) return; 
+    if(pass === null) {
+        restartCameraFeed(); // 用戶取消時重啟相機
+        return; 
+    }
 
-    // 使用新驗證函數
     const isValid = await verifyAdminPassword(pass);
     if (isValid) {
         stopSystem(false);
     } else {
         alert("密碼錯誤 (Invalid Password)");
+        restartCameraFeed(); // 驗證失敗時重啟相機
     }
 }
 
@@ -618,52 +655,63 @@
         }
 
         // --- MAIN LOOP ---
-        async function loop() {
-            if (!state.isRunning) return;
-            if (state.isToilet) { state.animId = requestAnimationFrame(loop); return; }
+      async function loop() {
+    // 確保視頻持續顯示，即使系統未運行
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // 系統未運行或在廁所模式時，只需持續顯示視頻
+    if (!state.isRunning || state.isToilet) {
+        state.animId = requestAnimationFrame(loop);
+        return;
+    }
 
-            const now = Date.now();
-            const timeLeft = state.sessionEndTime - now;
-            updateTimer(timeLeft);
+    const now = Date.now();
+    const timeLeft = state.sessionEndTime - now;
+    updateTimer(timeLeft);
 
-            if (timeLeft <= 0) {
-                stopSystem(true);
-                alert("Time's Up!");
-                return;
-            }
+    if (timeLeft <= 0) {
+        stopSystem(true);
+        alert("Time's Up!");
+        return;
+    }
 
-            if (now - state.lastProcessTime > PROCESS_INTERVAL) {
-                state.lastProcessTime = now;
-                state.currentMotionScore = calculateMotion();
-                
-                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
-                state.currentDetections = detections;
+    if (now - state.lastProcessTime > PROCESS_INTERVAL) {
+        state.lastProcessTime = now;
+        state.currentMotionScore = calculateMotion();
+        
+        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptors();
+        state.currentDetections = detections;
 
-                let targetFound = false;
-                state.currentDetections.forEach(det => {
-                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                    det.isMatch = (distance < config.matchThreshold);
-                    if (det.isMatch) targetFound = true;
-                });
-
-                state.isTargetPresent = targetFound;
-                checkStatus(state.isTargetPresent, state.currentMotionScore, now);
-            }
-
-            ctx.clearRect(0,0,canvas.width,canvas.height);
+        let targetFound = false;
+        if (state.referenceDescriptor) { // 確保 referenceDescriptor 存在
             state.currentDetections.forEach(det => {
-                const box = det.detection.box;
-                const drawBox = new faceapi.draw.DrawBox(box, { 
-                    label: det.isMatch ? "TARGET" : "UNKNOWN",
-                    boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
-                    lineWidth: 2
-                });
-                drawBox.draw(canvas);
+                const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                det.isMatch = (distance < config.matchThreshold);
+                if (det.isMatch) targetFound = true;
             });
-
-            updateTimeoutBar(now);
-            state.animId = requestAnimationFrame(loop);
         }
+
+        state.isTargetPresent = targetFound;
+        checkStatus(state.isTargetPresent, state.currentMotionScore, now);
+    }
+
+    // 在視頻上疊加繪製檢測框
+    state.currentDetections.forEach(det => {
+        const box = det.detection.box;
+        const drawBox = new faceapi.draw.DrawBox(box, { 
+            label: det.isMatch ? "TARGET" : "UNKNOWN",
+            boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
+            lineWidth: 2
+        });
+        drawBox.draw(canvas);
+    });
+
+    updateTimeoutBar(now);
+    state.animId = requestAnimationFrame(loop);
+}
 
         function checkStatus(targetPresent, motionScore, now) {
             if (targetPresent && motionScore > config.motionThreshold) {
@@ -822,22 +870,26 @@
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-       async function attemptToggleSettings() {
+     async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
     
     if (!panel.classList.contains('open')) {
         const pass = await showInputPrompt("請輸入管理員密碼", true);
-        if(pass === null) return; 
+        if(pass === null) {
+            restartCameraFeed(); // 用戶取消時重啟相機
+            return; 
+        }
 
-        // 使用新驗證函數
         const isValid = await verifyAdminPassword(pass);
         if (isValid) {
             toggleSettings();
         } else {
             alert("密碼錯誤 (Invalid Password)");
+            restartCameraFeed(); // 驗證失敗時重啟相機
         }
     } else {
         toggleSettings();
+        restartCameraFeed(); // 關閉設定面板時重啟相機
     }
 }
 
