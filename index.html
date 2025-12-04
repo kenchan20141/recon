@@ -412,7 +412,7 @@
                 msgEl.innerText = message;
                 inputEl.value = '';
                 inputEl.type = isPassword ? 'password' : 'text'; 
-                inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
+                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
 
                 modal.classList.add('active');
                 
@@ -525,7 +525,7 @@
         async function attemptStart() {
             if(!consentGiven) return;
 
-            const inputName = await showInputPrompt("YOUR NAME");
+            const inputName = await showInputPrompt("SESSION ID");
             if (inputName && inputName.trim() !== "") {
                 // SECURITY: Sanitize Input before use
                 sessionId = sanitizeInput(inputName.trim());
