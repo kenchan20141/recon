@@ -401,7 +401,7 @@
             if(state.isAiReady) document.getElementById('btn-start').disabled = false;
         }
 
-        function showInputPrompt(message, isPassword = false) {
+       function showInputPrompt(message, isPassword = false) {
     return new Promise((resolve) => {
         const modal = document.getElementById('input-modal');
         const msgEl = document.getElementById('modal-msg');
@@ -413,39 +413,33 @@
         inputEl.value = '';
         inputEl.type = isPassword ? 'password' : 'text'; 
         inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
+        inputEl.setAttribute('autocomplete', 'off');
 
         modal.classList.add('active');
         
-        setTimeout(() => {
-            inputEl.focus();
-        }, 300);
+        // 关键修复：不在移动设备上自动聚焦输入框
+        if (!/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            setTimeout(() => inputEl.focus(), 300);
+        }
         
         const close = (val) => {
             modal.classList.remove('active');
             confirmBtn.onclick = null;
             cancelBtn.onclick = null;
             inputEl.onkeydown = null;
-            // FIX: 清除空白、換行、Tab等不可見字符
-            const cleanedVal = val ? val.trim().replace(/[\r\n\t\u200B-\u200D\uFEFF]/g, '') : null;
-            resolve(cleanedVal);
+            // 严格验证：空值一律视为取消
+            resolve(val === null || val.trim() === "" ? null : val.trim());
         };
 
-        confirmBtn.onclick = () => {
-    // 在移動設備上確保獲取到最新的輸入值
-    setTimeout(() => close(inputEl.value), 50);
-};
+        confirmBtn.onclick = () => close(inputEl.value);
         cancelBtn.onclick = () => close(null);
         
-      inputEl.onkeydown = (e) => {
-    if (e.key === 'Enter') {
-        // 在移動設備上確保獲取到最新的輸入值
-        setTimeout(() => close(inputEl.value), 50);
-    }
-    if (e.key === 'Escape') close(null);
-};
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter') close(inputEl.value);
+            if (e.key === 'Escape') close(null);
+        };
     });
 }
-
         // --- CORE STATE ---
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
@@ -587,21 +581,47 @@
             loop();
         }
 
-        async function attemptStopSystem() {
+       async function attemptStopSystem() {
+    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+    // 严格验证：空值或取消直接返回
+    if(!pass) return;
+    
+    // 防止空密码通过验证
+    if (pass.trim() === "") {
+        alert("密碼不得為空");
+        return;
+    }
 
-console.log("Input password:", pass);
-console.log("Admin password:", adminPassword);
+    if (pass === adminPassword) {
+        stopSystem(false);
+    } else {
+        alert("密碼錯誤 (Invalid Password)");
+    }
+}
 
-            
-            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; 
-
-            if (pass === adminPassword) {
-                stopSystem(false);
-            } else {
-                alert("密碼錯誤 (Invalid Password)");
-            }
+async function attemptToggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    
+    if (!panel.classList.contains('open')) {
+        const pass = await showInputPrompt("請輸入管理員密碼", true);
+        // 严格验证：空值或取消直接返回
+        if(!pass) return;
+        
+        // 防止空密码通过验证
+        if (pass.trim() === "") {
+            alert("密碼不得為空");
+            return;
         }
+
+        if (pass === adminPassword) {
+            toggleSettings();
+        } else {
+            alert("密碼錯誤 (Invalid Password)");
+        }
+    } else {
+        toggleSettings();
+    }
+}
 
         function stopSystem(isAuto = false) {
             state.isRunning = false;
