@@ -683,7 +683,7 @@
             if (elapsed > config.timeoutMs) {
                 let reason = "";
                 if (!state.isTargetPresent) reason = "目標丟失 / 非本人";
-                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像 (照片攻擊)";
+                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
 
                 if (reason) triggerAlarm(`違規: ${reason}`);
             }
