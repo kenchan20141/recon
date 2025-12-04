@@ -380,23 +380,22 @@
 
 function restartCameraFeed() {
     cancelAnimationFrame(state.animId);
-    
+
+    // 如果正在運行或如廁模式，就交給原本的 loop 處理
     if (state.isRunning || state.isToilet) {
         state.animId = requestAnimationFrame(loop);
         return;
     }
-    
-    const drawFrame = () => {
-        if (!state.isRunning && !state.isToilet) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            if (video.readyState >= 2) {
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            }
-            state.animId = requestAnimationFrame(drawFrame);
+
+    // 其餘情況：純粹顯示即時相機畫面（不會定住）
+    const drawLiveFrame = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (video.readyState >= 2) {  // HAVE_ENOUGH_DATA
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         }
+        state.animId = requestAnimationFrame(drawLiveFrame);
     };
-    
-    drawFrame();
+    drawLiveFrame();
 }
 
         
@@ -569,38 +568,40 @@ function restartCameraFeed() {
             startFaceRegistration();
         }
 
-       async function startFaceRegistration() {
+     async function startFaceRegistration() {
     const regOverlay = document.getElementById('reg-overlay');
     const regCount = document.getElementById('reg-countdown');
     regOverlay.style.display = 'block';
-    
+
     let count = 3;
     regCount.innerText = count;
-    
+
     const timer = setInterval(async () => {
         count--;
-        if(count > 0) {
+        if (count > 0) {
             regCount.innerText = count;
         } else {
             clearInterval(timer);
             regCount.innerText = "LOCKING...";
-            
-            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-            
-            if (detection) {
+
+            const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+
+            if (detection && detection.descriptor) {
                 state.referenceDescriptor = detection.descriptor;
                 regOverlay.style.display = 'none';
                 startSystem();
             } else {
-                alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
+                // 失敗時重點：重新啟動相機流
                 regOverlay.style.display = 'none';
+                alert("Face not detected. Please look at the camera.\n未偵測到臉部，請正對鏡頭再試一次。");
                 document.getElementById('btn-start').disabled = false;
-                restartCameraFeed(); // 關鍵修復：重新啟動相機流
+                restartCameraFeed();  // 關鍵修復
             }
         }
     }, 1000);
 }
-
         // --- SYSTEM CONTROL ---
         function startSystem() {
     state.isRunning = true;
@@ -617,9 +618,11 @@ function restartCameraFeed() {
       // 在attemptStopSystem函數中
 async function attemptStopSystem() {
     const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-    if(pass === null) {
-        restartCameraFeed(); // 用戶取消時重啟相機
-        return; 
+    
+    // 用戶按取消
+    if (pass === null) {
+        restartCameraFeed();  // 關鍵修復
+        return;
     }
 
     const isValid = await verifyAdminPassword(pass);
@@ -627,25 +630,27 @@ async function attemptStopSystem() {
         stopSystem(false);
     } else {
         alert("密碼錯誤 (Invalid Password)");
-        restartCameraFeed(); // 驗證失敗時重啟相機
+        restartCameraFeed();  // 關鍵修復
     }
 }
 
-       function stopSystem(isAuto = false) {
+     function stopSystem(isAuto = false) {
     state.isRunning = false;
+    state.isToilet = false;
     state.referenceDescriptor = null;
     cancelAnimationFrame(state.animId);
     stopAlarm();
     clearInterval(state.integrityCheckInterval);
-    
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     updateUI(false);
 
     const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
     const reason = isAuto ? "時間到" : "手動終止";
     logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-    
-    restartCameraFeed(); // 關鍵修復：停止系統後重啟相機
+
+    // 停止後一定要重新啟動純顯示模式
+    restartCameraFeed();
 }
 
         function updateUI(active) {
@@ -878,12 +883,13 @@ async function attemptStopSystem() {
         // --- SETTINGS (PASSWORD PROTECTED) ---
     async function attemptToggleSettings() {
     const panel = document.getElementById('settings-panel');
-    
+
     if (!panel.classList.contains('open')) {
         const pass = await showInputPrompt("請輸入管理員密碼", true);
-        if(pass === null) {
-            restartCameraFeed(); // 用戶取消時重啟相機
-            return; 
+        
+        if (pass === null) {
+            restartCameraFeed();  // 取消時也重啟畫面
+            return;
         }
 
         const isValid = await verifyAdminPassword(pass);
@@ -891,12 +897,14 @@ async function attemptStopSystem() {
             toggleSettings();
         } else {
             alert("密碼錯誤 (Invalid Password)");
-            restartCameraFeed(); // 驗證失敗時重啟相機
+            restartCameraFeed();  // 密碼錯也要重啟畫面
         }
     } else {
         toggleSettings();
-        restartCameraFeed(); // 關閉設定面板時重啟相機
     }
+    
+    // 無論如何都要確保畫面持續刷新
+    restartCameraFeed();
 }
 
         function toggleSettings() {
