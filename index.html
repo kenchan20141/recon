@@ -203,6 +203,21 @@
         }
         .copyright-footer p { margin: 0; font-size: 14px; color: #000; font-family: sans-serif; }
         @media (max-width: 600px) { .copyright-footer p { font-size: 12px; } }
+
+
+/* 確保iOS上按鈕和輸入框正常工作 */
+.ios-device .modal-input, 
+.ios-device button {
+    cursor: pointer !important;
+    -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+}
+
+.ios-device .modal-input:focus {
+    outline: 1px solid var(--primary-color) !important;
+    box-shadow: 0 0 0 2px var(--primary-color) !important;
+}
+
+        
     </style>
 </head>
 <body>
@@ -430,12 +445,27 @@
                 };
 
                 confirmBtn.onclick = () => close(inputEl.value);
-                cancelBtn.onclick = () => close(null);
+cancelBtn.onclick = () => close(null);
+// 添加觸控事件支持
+confirmBtn.addEventListener('touchend', (e) => { e.preventDefault(); close(inputEl.value); });
+cancelBtn.addEventListener('touchend', (e) => { e.preventDefault(); close(null); });
                 
-                inputEl.onkeydown = (e) => {
-                    if (e.key === 'Enter') close(inputEl.value);
-                    if (e.key === 'Escape') close(null);
-                };
+               inputEl.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        close(inputEl.value);
+    }
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        close(null);
+    }
+};
+
+// 添加提交表單事件以防萬一
+document.querySelector('.modal-box').onsubmit = (e) => {
+    e.preventDefault();
+    close(inputEl.value);
+};
             });
         }
 
@@ -583,7 +613,7 @@
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
             if(pass === null) return; 
 
-            if (pass === adminPassword) {
+            if (pass && pass.trim() === adminPassword.trim()) {
                 stopSystem(false);
             } else {
                 alert("密碼錯誤 (Invalid Password)");
@@ -861,6 +891,20 @@
         }
 
         window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
+
+        // 檢測是否為iPad並啟用特殊處理
+const isiPad = navigator.userAgent.match(/iPad/i) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (isiPad) {
+    document.body.classList.add('ios-device');
+    
+    // 特別針對iOS修復點擊延遲
+    document.addEventListener('touchstart', function() {}, true);
+    
+    // 修復iOS上輸入框獲取焦點的問題
+    document.getElementById('modal-input').addEventListener('touchstart', function(e) {
+        this.focus();
+    });
+}
 
     </script>
 </body>
