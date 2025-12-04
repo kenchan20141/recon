@@ -670,15 +670,20 @@ if (!navigator.onLine) {
 
 }
 
-        function updateUI(active) {
-            document.getElementById('btn-start').disabled = active;
-            document.getElementById('btn-stop').disabled = !active;
-            document.getElementById('btn-toilet').disabled = !active;
-            document.getElementById('led-status').className = active ? "led scan" : "led";
-            document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE (生物鎖定中)" : "TERMINATED (已終止)";
-            if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
-            timeoutBar.style.width = active ? "100%" : "0%";
-        }
+       function updateUI(active) {
+    document.getElementById('btn-start').disabled = active;
+    document.getElementById('btn-stop').disabled = !active;
+    document.getElementById('btn-toilet').disabled = !active;
+    
+    // 新增這行：控制設定按鈕
+    const settingsButton = document.querySelector('button[onclick="attemptToggleSettings()"]');
+    if (settingsButton) settingsButton.disabled = active;
+    
+    document.getElementById('led-status').className = active ? "led scan" : "led";
+    document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE (生物鎖定中)" : "TERMINATED (已終止)";
+    if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
+    timeoutBar.style.width = active ? "100%" : "0%";
+}
 
         // --- MAIN LOOP ---
         async function loop() {
@@ -864,12 +869,14 @@ function checkStatus(targetPresent, motionScore, now) {
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-        async function attemptToggleSettings() {
-
-// 在這兩個函數開頭添加
-if (!navigator.onLine) {
-  alert("需要網路連線進行驗證");
-  return;
+       async function attemptToggleSettings() {
+    if (!navigator.onLine) {
+        alert("需要網路連線進行驗證");
+        return;
+    }
+            
+    const panel = document.getElementById('settings-panel');
+    toggleSettings(); // 直接切換，不需要密碼
 }
 
             
