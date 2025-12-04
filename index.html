@@ -401,43 +401,168 @@
             if(state.isAiReady) document.getElementById('btn-start').disabled = false;
         }
 
-        function showInputPrompt(message, isPassword = false) {
-            return new Promise((resolve) => {
-                const modal = document.getElementById('input-modal');
-                const msgEl = document.getElementById('modal-msg');
-                const inputEl = document.getElementById('modal-input');
-                const confirmBtn = document.getElementById('modal-confirm-btn');
-                const cancelBtn = document.getElementById('modal-cancel-btn');
+       Your issue seems to stem from inconsistent password validation behavior across devices, particularly with the showInputPrompt function and how it handles input on mobile devices like iPads. The problem is that the password is accepted on a computer but rejected on an iPad, and bypassing the password input allows access. This suggests potential issues with input handling, keyboard behavior, or session state management. However, you specifically asked for code replacements to address this issue without modifying the entire HTML. Below, I’ll focus on replacing the problematic code in the <script> section related to the showInputPrompt function and password validation logic to ensure consistent behavior across devices.
+Issue Analysis
 
-                msgEl.innerText = message;
-                inputEl.value = '';
-                inputEl.type = isPassword ? 'password' : 'text'; 
-                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
+Inconsistent Password Validation: The showInputPrompt function may not properly capture or compare input on mobile devices due to virtual keyboard issues, input sanitization, or state persistence.
+Bypassing Password: The ability to bypass the password check (e.g., by not entering a password) suggests that the logic in attemptStopSystem or attemptToggleSettings may not robustly handle empty or null inputs.
+Device-Specific Behavior: Mobile devices (like iPads) may trigger the virtual keyboard differently, potentially causing input focus issues or incomplete input capture.
 
-                modal.classList.add('active');
-                
-                // --- KEYBOARD PREVENTION ---
-                // Removed the inputEl.focus() call.
-                // This ensures the virtual keyboard does NOT pop up automatically on mobile.
-                // The user must tap the input field manually.
-                
-                const close = (val) => {
-                    modal.classList.remove('active');
-                    confirmBtn.onclick = null;
-                    cancelBtn.onclick = null;
-                    inputEl.onkeydown = null;
-                    resolve(val);
-                };
+Code Replacement
+To address the issue, we need to:
 
-                confirmBtn.onclick = () => close(inputEl.value);
-                cancelBtn.onclick = () => close(null);
-                
-                inputEl.onkeydown = (e) => {
-                    if (e.key === 'Enter') close(inputEl.value);
-                    if (e.key === 'Escape') close(null);
-                };
-            });
+Enhance the showInputPrompt function to ensure reliable input capture and prevent bypassing.
+Strengthen password validation in attemptStopSystem and attemptToggleSettings to handle edge cases (e.g., empty or null inputs).
+Ensure consistent sanitization and comparison of passwords across devices.
+
+Replace the following code in the <script> section:
+Original Code to Replace
+JavaScriptfunction showInputPrompt(message, isPassword = false) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('input-modal');
+        const msgEl = document.getElementById('modal-msg');
+        const inputEl = document.getElementById('modal-input');
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        const cancelBtn = document.getElementById('modal-cancel-btn');
+        msgEl.innerText = message;
+        inputEl.value = '';
+        inputEl.type = isPassword ? 'password' : 'text';
+        inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
+        modal.classList.add('active');
+       
+        // --- KEYBOARD PREVENTION ---
+        // Removed the inputEl.focus() call.
+        // This ensures the virtual keyboard does NOT pop up automatically on mobile.
+        // The user must tap the input field manually.
+       
+        const close = (val) => {
+            modal.classList.remove('active');
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+            inputEl.onkeydown = null;
+            resolve(val);
+        };
+        confirmBtn.onclick = () => close(inputEl.value);
+        cancelBtn.onclick = () => close(null);
+       
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter') close(inputEl.value);
+            if (e.key === 'Escape') close(null);
+        };
+    });
+}
+
+async function attemptStopSystem() {
+    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+    if(pass === null) return;
+    if (pass === adminPassword) {
+        stopSystem(false);
+    } else {
+        alert("密碼錯誤 (Invalid Password)");
+    }
+}
+
+async function attemptToggleSettings() {
+    const panel = document.getElementById('settings-panel');
+   
+    if (!panel.classList.contains('open')) {
+        const pass = await showInputPrompt("請輸入管理員密碼", true);
+        if(pass === null) return;
+        if (pass === adminPassword) {
+            toggleSettings();
+        } else {
+            alert("密碼錯誤 (Invalid Password)");
         }
+    } else {
+        toggleSettings();
+    }
+}
+Replacement Code
+JavaScriptfunction showInputPrompt(message, isPassword = false) {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('input-modal');
+        const msgEl = document.getElementById('modal-msg');
+        const inputEl = document.getElementById('modal-input');
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        const cancelBtn = document.getElementById('modal-cancel-btn');
+        msgEl.innerText = message;
+        inputEl.value = '';
+        inputEl.type = isPassword ? 'password' : 'text';
+        inputEl.placeholder = isPassword ? 'Enter Password' : 'ENTER ID';
+        inputEl.setAttribute('autocomplete', 'off');
+        inputEl.setAttribute('autocapitalize', 'none');
+        modal.classList.add('active');
+        
+        // Ensure input field is cleared and focused manually on mobile
+        inputEl.addEventListener('touchstart', () => inputEl.focus(), { once: true });
+        
+        const close = (val) => {
+            modal.classList.remove('active');
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+            inputEl.onkeydown = null;
+            inputEl.value = ''; // Clear input after closing
+            resolve(val ? val.trim() : null); // Trim input and ensure null for empty
+        };
+        
+        confirmBtn.onclick = () => {
+            const value = inputEl.value.trim();
+            if (isPassword && !value) {
+                alert('Password cannot be empty / 密碼不能為空');
+                return;
+            }
+            close(value);
+        };
+        
+        cancelBtn.onclick = () => close(null);
+        
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                const value = inputEl.value.trim();
+                if (isPassword && !value) {
+                    alert('Password cannot be empty / 密碼不能為空');
+                    return;
+                }
+                close(value);
+            }
+            if (e.key === 'Escape') close(null);
+        };
+    });
+}
+
+async function attemptStopSystem() {
+    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+    if (pass === null || pass === '') {
+        alert("操作已取消或密碼無效 / Operation cancelled or invalid password");
+        return;
+    }
+    const sanitizedPass = sanitizeInput(pass);
+    if (sanitizedPass === adminPassword) {
+        stopSystem(false);
+    } else {
+        alert("密碼錯誤 / Invalid Password");
+    }
+}
+
+async function attemptToggleSettings() {
+    const panel = document.getElementById('settings-panel');
+    
+    if (!panel.classList.contains('open')) {
+        const pass = await showInputPrompt("請輸入管理員密碼", true);
+        if (pass === null || pass === '') {
+            alert("操作已取消或密碼無效 / Operation cancelled or invalid password");
+            return;
+        }
+        const sanitizedPass = sanitizeInput(pass);
+        if (sanitizedPass === adminPassword) {
+            toggleSettings();
+        } else {
+            alert("密碼錯誤 / Invalid Password");
+        }
+    } else {
+        toggleSettings();
+    }
+}
 
         // --- CORE STATE ---
         const video = document.getElementById('webcam');
