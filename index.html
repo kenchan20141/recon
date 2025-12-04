@@ -570,17 +570,15 @@
 
         // --- SYSTEM CONTROL ---
         function startSystem() {
-            state.isRunning = true;
-            state.hasViolated = false;
-            state.lastLiveTimestamp = Date.now(); 
-            state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
-            
-            updateUI(true);
-        
-            startIntegrityCheck();
-            loop();
-
- // 初始化 Firebase 會話狀態
+    state.isRunning = true;
+    state.hasViolated = false;
+    state.lastLiveTimestamp = Date.now(); 
+    state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+    
+    // 先更新 UI
+    updateUI(true);
+    
+    // 初始化 Firebase 會話狀態
     if(sessionId) {
         database.ref('sessions/' + sessionId).set({
             start_time: new Date().toISOString(),
@@ -590,11 +588,23 @@
                 toiletDuration: config.toiletDuration,
                 maxToiletVisits: config.maxToiletVisits
             }
+        }).then(() => {
+            console.log("Session state initialized in Firebase");
+            // 狀態寫入成功後再開始完整性檢查
+            startIntegrityCheck();
+            loop();
+        }).catch(error => {
+            console.error("Failed to initialize session in Firebase:", error);
+            alert("無法連接到安全伺服器，請檢查網路連線");
+            stopSystem(false);
         });
+        return; // 阻止直接執行下面的 loop
     }
-
-            
-        }
+    
+    // 如果沒有 sessionId，直接開始
+    startIntegrityCheck();
+    loop();
+}
 
 
 async function verifySessionWithFirebase() {
@@ -623,28 +633,29 @@ async function verifySessionWithFirebase() {
             }
         }
 
-        function stopSystem(isAuto = false) {
-            state.isRunning = false;
-            state.referenceDescriptor = null;
-            cancelAnimationFrame(state.animId);
-            stopAlarm();
-            clearInterval(state.integrityCheckInterval);
-            
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            updateUI(false);
+       function stopSystem(isAuto = false) {
+    state.isRunning = false;
+    state.referenceDescriptor = null;
+    cancelAnimationFrame(state.animId);
+    stopAlarm();
+    clearInterval(state.integrityCheckInterval);
+    
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    updateUI(false);
 
-            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
-            const reason = isAuto ? "時間到" : "手動終止";
-            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-
-
-  if(sessionId) {
+    const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+    const reason = isAuto ? "時間到" : "手動終止";
+    logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+    
+    // 終止時更新 Firebase 狀態
+    if(sessionId) {
         database.ref('sessions/' + sessionId + '/status').set('terminated');
         database.ref('sessions/' + sessionId + '/end_time').set(new Date().toISOString());
     }
-
-            
-        }
+    
+    // 清除本地標記
+    localStorage.removeItem('monitor_active');
+}
 
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
@@ -705,24 +716,17 @@ async function verifySessionWithFirebase() {
         }
 
       // 修改 checkStatus 函數
-async function checkStatus(targetPresent, motionScore, now) {
-    // 先驗證會話是否有效
-    const isValidSession = await verifySessionWithFirebase();
-    if (!isValidSession) {
-        stopSystem(false);
-        return;
-    }
-    
-    // 原有邏輯
+function checkStatus(targetPresent, motionScore, now) {
+    // 暫時移除 Firebase 驗證，回到原有邏輯
     if (targetPresent && motionScore > config.motionThreshold) {
-                state.lastLiveTimestamp = now;
-                stopAlarm();
-                viewport.classList.add('verified');
-                document.getElementById('text-status').innerText = "VERIFIED: TARGET LOCKED";
-            } else {
-                viewport.classList.remove('verified');
-            }
-        }
+        state.lastLiveTimestamp = now;
+        stopAlarm();
+        viewport.classList.add('verified');
+        document.getElementById('text-status').innerText = "VERIFIED: TARGET LOCKED";
+    } else {
+        viewport.classList.remove('verified');
+    }
+}
 
         function updateTimeoutBar(now) {
             const elapsed = now - state.lastLiveTimestamp;
@@ -794,22 +798,25 @@ async function checkStatus(targetPresent, motionScore, now) {
         }
 
         // --- ANTI-TAMPER ---
-       function startIntegrityCheck() {
+      function startIntegrityCheck() {
     state.integrityCheckInterval = setInterval(async () => {
+        if (!state.isRunning || state.isToilet) return;
+        
         try {
-            // 向 Firebase 查詢當前會話狀態
-            const sessionRef = database.ref('sessions/' + sessionId + '/status');
-            const snapshot = await sessionRef.once('value');
+            const snapshot = await database.ref('sessions/' + sessionId + '/status').once('value');
+            const isValid = snapshot.exists() && snapshot.val() === 'active';
             
-            if (!snapshot.exists() || snapshot.val() !== 'active') {
-                logToCloud("SEVERE", "Session 狀態異常或已終止", true);
+            if (!isValid) {
+                console.warn("Session invalidated on Firebase");
+                logToCloud("SEVERE", "Session 被遠端終止", true);
                 stopSystem(false);
             }
         } catch (error) {
-            console.error("Firebase 驗證失敗:", error);
-            // 可選擇在此處觸發警報
+            console.error("Firebase validation failed:", error);
+            // 不立即終止，只記錄錯誤
+            logToCloud("WARNING", "無法連接 Firebase 進行驗證", false);
         }
-    }, 5000); // 每5秒檢查一次
+    }, 10000); // 每10秒檢查一次，減少頻率
 }
 
         document.addEventListener("visibilitychange", () => {
