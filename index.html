@@ -560,9 +560,10 @@
                         regOverlay.style.display = 'none';
                         startSystem();
                     } else {
-                        alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
-                        regOverlay.style.display = 'none';
-                    }
+    alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
+    regOverlay.style.display = 'none';
+    setTimeout(() => location.reload(), 2000); // 2秒後自動刷新
+}
                 }
             }, 1000);
         }
@@ -588,6 +589,7 @@
                 stopSystem(false);
             } else {
                 alert("密碼錯誤 (Invalid Password)");
+                setTimeout(() => location.reload(), 2000); // 2秒後自動刷新
             }
         }
 
@@ -799,6 +801,7 @@
                     toggleSettings();
                 } else {
                     alert("密碼錯誤 (Invalid Password)");
+                    setTimeout(() => location.reload(), 2000); // 2秒後自動刷新
                 }
             } else {
                 toggleSettings();
