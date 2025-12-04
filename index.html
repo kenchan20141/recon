@@ -487,10 +487,14 @@
         const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
 
         // --- INIT & FACE API ---
-        async function init() {
-            fetchAdminPassword();
-
-            try {
+       async function init() {
+    fetchAdminPassword();
+    
+    // 記錄頁面載入事件
+    const loadTimestamp = new Date().toLocaleString('zh-TW');
+    logToCloud("SYSTEM", `頁面載入於 ${loadTimestamp}`, true);
+    
+    try {
                 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
                 await Promise.all([
                     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
@@ -567,43 +571,53 @@
         }
 
         // --- SYSTEM CONTROL ---
-        function startSystem() {
-            state.isRunning = true;
-            state.hasViolated = false;
-            state.lastLiveTimestamp = Date.now(); 
-            state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
-            
-            updateUI(true);
-            localStorage.setItem('monitor_active', 'true');
-            startIntegrityCheck();
-            loop();
-        }
+       function startSystem() {
+    state.isRunning = true;
+    state.hasViolated = false;
+    state.lastLiveTimestamp = Date.now();
+    state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+    
+    updateUI(true);
+    localStorage.setItem('monitor_active', 'true');
+    startIntegrityCheck();
+    loop();
+    
+    // 開始偵測後禁用設定按鈕
+    const settingsBtn = document.querySelector('button[onclick="attemptToggleSettings()"]');
+    if (settingsBtn) {
+        settingsBtn.disabled = true;
+    }
+}
 
-        async function attemptStopSystem() {
-            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; 
+       async function attemptStopSystem() {
+    if (!state.isRunning) return;
+    
+    const confirmStop = confirm("確定要終止監控系統嗎？");
+    if (confirmStop) {
+        stopSystem(false);
+    }
+}
 
-            if (pass === adminPassword) {
-                stopSystem(false);
-            } else {
-                alert("密碼錯誤 (Invalid Password)");
-            }
-        }
-
-        function stopSystem(isAuto = false) {
-            state.isRunning = false;
-            state.referenceDescriptor = null;
-            cancelAnimationFrame(state.animId);
-            stopAlarm();
-            clearInterval(state.integrityCheckInterval);
-            
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            updateUI(false);
-
-            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
-            const reason = isAuto ? "時間到" : "手動終止";
-            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-        }
+       function stopSystem(isAuto = false) {
+    state.isRunning = false;
+    state.referenceDescriptor = null;
+    cancelAnimationFrame(state.animId);
+    stopAlarm();
+    clearInterval(state.integrityCheckInterval);
+    
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    updateUI(false);
+    
+    // 重新啟用設定按鈕
+    const settingsBtn = document.querySelector('button[onclick="attemptToggleSettings()"]');
+    if (settingsBtn) {
+        settingsBtn.disabled = false;
+    }
+    
+    const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+    const reason = isAuto ? "時間到" : "手動終止";
+    logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+}
 
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
@@ -710,38 +724,49 @@
             document.getElementById('led-status').className = "led scan";
         }
 
-        function logToCloud(category, msg, saveToDb = false) {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
-
-            // XSS DEFENSE LAYER 3: Safe DOM Rendering
-            // Use createTextNode/textContent instead of innerHTML to prevent Stored XSS
-            if (saveToDb) {
-                const div = document.createElement('div');
-                div.className = "log-entry";
-                
-                const timeSpan = document.createElement('span');
-                timeSpan.style.color = "#666";
-                timeSpan.textContent = `[${timeStr}] `;
-                
-                const msgNode = document.createTextNode(`${category}: ${msg}`);
-                
-                div.appendChild(timeSpan);
-                div.appendChild(msgNode);
-                logDisplay.appendChild(div);
-                logDisplay.scrollTop = logDisplay.scrollHeight;
-
-                // Sanitize before DB write (Extra Safety Layer)
-                const safeMsg = sanitizeInput(msg);
-                const safeCategory = sanitizeInput(category);
-
-                database.ref('sessions/' + sessionId + '/logs').push({
-                    time: timeStr,
-                    type: safeCategory,
-                    details: safeMsg
-                });
-            }
+       function logToCloud(category, msg, saveToDb = false) {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
+    
+    // XSS DEFENSE LAYER 3: Safe DOM Rendering
+    if (saveToDb) {
+        const div = document.createElement('div');
+        div.className = "log-entry";
+        
+        const timeSpan = document.createElement('span');
+        timeSpan.style.color = "#666";
+        timeSpan.textContent = `[${timeStr}] `;
+        
+        const msgNode = document.createTextNode(`${category}: ${msg}`);
+        
+        div.appendChild(timeSpan);
+        div.appendChild(msgNode);
+        logDisplay.appendChild(div);
+        logDisplay.scrollTop = logDisplay.scrollHeight;
+        
+        // Sanitize before DB write
+        const safeMsg = sanitizeInput(msg);
+        const safeCategory = sanitizeInput(category);
+        
+        // 同時記錄到不同的路徑以便追蹤
+        const logRef = database.ref('sessions/' + sessionId + '/logs');
+        const pageEventRef = database.ref('sessions/' + sessionId + '/pageEvents');
+        
+        const logData = {
+            time: timeStr,
+            type: safeCategory,
+            details: safeMsg,
+            timestamp: Date.now()
+        };
+        
+        // 如果是頁面相關事件，同時記錄到 pageEvents
+        if (category === "SEVERE" || category === "PAGE_UNLOAD" || category === "SYSTEM") {
+            pageEventRef.push(logData);
         }
+        
+        logRef.push(logData);
+    }
+}
 
         // --- ANTI-TAMPER ---
         function startIntegrityCheck() {
@@ -754,13 +779,21 @@
             }, 2000);
         }
 
-        document.addEventListener("visibilitychange", () => {
-            if (state.isRunning && !state.isToilet && document.hidden) {
-                logToCloud("SEVERE", "分頁切換 / 隱藏", true);
-                triggerAlarm("分頁切換 / 隱藏");
-                state.hasViolated = true;
-            }
-        });
+       document.addEventListener("visibilitychange", () => {
+    if (state.isRunning && !state.isToilet) {
+        const eventType = document.hidden ? "分頁隱藏/切換" : "分頁恢復顯示";
+        const timestamp = new Date().toLocaleString('zh-TW');
+        
+        // 記錄到Firebase
+        if (document.hidden) {
+            logToCloud("SEVERE", `分頁切換/隱藏於 ${timestamp}`, true);
+            triggerAlarm("分頁切換 / 隱藏");
+            state.hasViolated = true;
+        } else {
+            logToCloud("SYSTEM", `分頁恢復顯示於 ${timestamp}`, true);
+        }
+    }
+});
 
         // --- HELPERS ---
         function calculateMotion() {
@@ -787,22 +820,16 @@
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-        async function attemptToggleSettings() {
-            const panel = document.getElementById('settings-panel');
-            
-            if (!panel.classList.contains('open')) {
-                const pass = await showInputPrompt("請輸入管理員密碼", true);
-                if(pass === null) return; 
-
-                if (pass === adminPassword) {
-                    toggleSettings();
-                } else {
-                    alert("密碼錯誤 (Invalid Password)");
-                }
-            } else {
-                toggleSettings();
-            }
-        }
+      function attemptToggleSettings() {
+    // 如果系統正在運行，則禁止點擊設定
+    if (state.isRunning) {
+        logToCloud("SYSTEM", "設定功能已鎖定 (監控進行中)", true);
+        return;
+    }
+    
+    const panel = document.getElementById('settings-panel');
+    panel.classList.toggle('open');
+}
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
@@ -860,7 +887,49 @@
             };
         }
 
-        window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
+      window.addEventListener('beforeunload', (e) => {
+    if (state.isRunning) {
+        // 記錄頁面關閉事件到Firebase
+        const timestamp = new Date().toLocaleString('zh-TW');
+        const pageCloseLog = {
+            time: timestamp,
+            type: "PAGE_UNLOAD",
+            details: "使用者嘗試關閉或重新載入頁面",
+            sessionId: sessionId,
+            hasViolated: state.hasViolated
+        };
+        
+        // 嘗試同步發送日誌到Firebase
+        try {
+            const sanitizedLog = {
+                time: sanitizeInput(timestamp),
+                type: sanitizeInput("PAGE_UNLOAD"),
+                details: sanitizeInput("使用者嘗試關閉或重新載入頁面"),
+                sessionId: sanitizeInput(sessionId),
+                hasViolated: state.hasViolated
+            };
+            
+            // 使用同步的 XHR 或 sendBeacon 確保日誌發送
+            if (navigator.sendBeacon) {
+                // 將數據轉換為 Blob
+                const blob = new Blob([JSON.stringify(sanitizedLog)], {type: 'application/json'});
+                navigator.sendBeacon(`https://detector-1f676-default-rtdb.firebaseio.com/sessions/${encodeURIComponent(sessionId)}/pageEvents.json`, blob);
+            }
+            
+            // 仍然使用Firebase記錄（盡力而為）
+            database.ref('sessions/' + sessionId + '/pageEvents').push(sanitizedLog);
+            
+        } catch (error) {
+            console.error("Firebase日誌發送失敗:", error);
+        }
+        
+        // 顯示離開確認
+        e.preventDefault();
+        e.returnValue = '監控系統正在運行中，確定要離開嗎？';
+        return e.returnValue;
+    }
+});
+
 
     </script>
 </body>
