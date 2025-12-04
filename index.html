@@ -413,7 +413,7 @@
                 msgEl.innerText = message;
                 inputEl.value = '';
                 inputEl.type = isPassword ? 'password' : 'text'; 
-                inputEl.placeholder = isPassword ? '******' : 'ENTER ID';
+              inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
 
                 modal.classList.add('active');
                 
@@ -526,7 +526,7 @@
         async function attemptStart() {
             if(!consentGiven) return;
 
-            const inputName = await showInputPrompt("SESSION ID");
+           const inputName = await showInputPrompt("YOUR NAME");
             if (inputName && inputName.trim() !== "") {
                 // SECURITY: Sanitize Input before use
                 sessionId = sanitizeInput(inputName.trim());
@@ -576,11 +576,41 @@
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             
             updateUI(true);
-            localStorage.setItem('monitor_active', 'true');
+        
             startIntegrityCheck();
             loop();
+
+ // 初始化 Firebase 會話狀態
+    if(sessionId) {
+        database.ref('sessions/' + sessionId).set({
+            start_time: new Date().toISOString(),
+            status: 'active',
+            config: {
+                sessionMinutes: config.sessionMinutes,
+                toiletDuration: config.toiletDuration,
+                maxToiletVisits: config.maxToiletVisits
+            }
+        });
+    }
+
+            
         }
 
+
+async function verifySessionWithFirebase() {
+    if (!sessionId) return false;
+    
+    try {
+        const snapshot = await database.ref('sessions/' + sessionId + '/status').once('value');
+        return snapshot.exists() && snapshot.val() === 'active';
+    } catch (error) {
+        console.error("Firebase 驗證失敗:", error);
+        return false;
+    }
+}
+
+
+        
         async function attemptStopSystem() {
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
             if(pass === null) return; 
@@ -606,6 +636,14 @@
             const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
             const reason = isAuto ? "時間到" : "手動終止";
             logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+
+
+  if(sessionId) {
+        database.ref('sessions/' + sessionId + '/status').set('terminated');
+        database.ref('sessions/' + sessionId + '/end_time').set(new Date().toISOString());
+    }
+
+            
         }
 
         function updateUI(active) {
@@ -666,8 +704,17 @@
             state.animId = requestAnimationFrame(loop);
         }
 
-        function checkStatus(targetPresent, motionScore, now) {
-            if (targetPresent && motionScore > config.motionThreshold) {
+      // 修改 checkStatus 函數
+async function checkStatus(targetPresent, motionScore, now) {
+    // 先驗證會話是否有效
+    const isValidSession = await verifySessionWithFirebase();
+    if (!isValidSession) {
+        stopSystem(false);
+        return;
+    }
+    
+    // 原有邏輯
+    if (targetPresent && motionScore > config.motionThreshold) {
                 state.lastLiveTimestamp = now;
                 stopAlarm();
                 viewport.classList.add('verified');
@@ -747,15 +794,23 @@
         }
 
         // --- ANTI-TAMPER ---
-        function startIntegrityCheck() {
-            state.integrityCheckInterval = setInterval(() => {
-                if (!localStorage.getItem('monitor_active')) {
-                    logToCloud("SEVERE", "Local Storage 遭篡改", true);
-                    localStorage.setItem('monitor_active', 'true');
-                    state.hasViolated = true;
-                }
-            }, 2000);
+       function startIntegrityCheck() {
+    state.integrityCheckInterval = setInterval(async () => {
+        try {
+            // 向 Firebase 查詢當前會話狀態
+            const sessionRef = database.ref('sessions/' + sessionId + '/status');
+            const snapshot = await sessionRef.once('value');
+            
+            if (!snapshot.exists() || snapshot.val() !== 'active') {
+                logToCloud("SEVERE", "Session 狀態異常或已終止", true);
+                stopSystem(false);
+            }
+        } catch (error) {
+            console.error("Firebase 驗證失敗:", error);
+            // 可選擇在此處觸發警報
         }
+    }, 5000); // 每5秒檢查一次
+}
 
         document.addEventListener("visibilitychange", () => {
             if (state.isRunning && !state.isToilet && document.hidden) {
