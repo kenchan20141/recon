@@ -322,7 +322,7 @@
         <div class="modal-box">
             <div class="modal-title" id="modal-msg">YOUR NAME</div>
             <!-- autocomplete="off" helps prevent browser suggestions overlaying keypads -->
-            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off">
+            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER YOUR NAME" autocomplete="off">
             <div class="modal-btns">
                 <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
                 <button id="modal-confirm-btn">CONFIRM</button>
@@ -525,7 +525,7 @@
         async function attemptStart() {
             if(!consentGiven) return;
 
-            const inputName = await showInputPrompt("SESSION ID");
+            const inputName = await showInputPrompt("YOUR NAME");
             if (inputName && inputName.trim() !== "") {
                 // SECURITY: Sanitize Input before use
                 sessionId = sanitizeInput(inputName.trim());
