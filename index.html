@@ -378,20 +378,6 @@
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
-        async function verifyAdminPassword(inputPassword) {
-    try {
-        const snapshot = await database.ref('admin/password').once('value');
-        if (snapshot.exists()) {
-            const currentPassword = snapshot.val();
-            return inputPassword === currentPassword;
-        }
-        return false;
-    } catch (error) {
-        console.error("Password verification failed:", error);
-        return false;
-    }
-}
-
         // --- FETCH ADMIN PASSWORD ---
         function fetchAdminPassword() {
             database.ref('admin/password').once('value')
@@ -537,19 +523,19 @@
         init();
 
         // --- START SEQUENCE ---
-       async function attemptStopSystem() {
-    const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-    if(pass === null) return; 
+        async function attemptStart() {
+            if(!consentGiven) return;
 
-    // 使用Firebase驗證代替本地密碼
-    const isValid = await verifyAdminPassword(pass);
-    if (isValid) {
-        stopSystem(false);
-    } else {
-        alert("密碼錯誤 (Invalid Password)");
-        setTimeout(() => location.reload(), 2000);
-    }
-}
+            const inputName = await showInputPrompt("SESSION ID");
+            if (inputName && inputName.trim() !== "") {
+                // SECURITY: Sanitize Input before use
+                sessionId = sanitizeInput(inputName.trim());
+            } else {
+                sessionId = getDateId();
+            }
+            
+            startFaceRegistration();
+        }
 
         async function startFaceRegistration() {
             const regOverlay = document.getElementById('reg-overlay');
@@ -590,8 +576,8 @@
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             
             updateUI(true);
-           
-     
+            localStorage.setItem('monitor_active', 'true');
+            startIntegrityCheck();
             loop();
         }
 
@@ -760,7 +746,16 @@
             }
         }
 
-     
+        // --- ANTI-TAMPER ---
+        function startIntegrityCheck() {
+            state.integrityCheckInterval = setInterval(() => {
+                if (!localStorage.getItem('monitor_active')) {
+                    logToCloud("SEVERE", "Local Storage 遭篡改", true);
+                    localStorage.setItem('monitor_active', 'true');
+                    state.hasViolated = true;
+                }
+            }, 2000);
+        }
 
         document.addEventListener("visibilitychange", () => {
             if (state.isRunning && !state.isToilet && document.hidden) {
@@ -795,25 +790,23 @@
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-       async function attemptToggleSettings() {
-    const panel = document.getElementById('settings-panel');
-    
-    if (!panel.classList.contains('open')) {
-        const pass = await showInputPrompt("請輸入管理員密碼", true);
-        if(pass === null) return; 
+        async function attemptToggleSettings() {
+            const panel = document.getElementById('settings-panel');
+            
+            if (!panel.classList.contains('open')) {
+                const pass = await showInputPrompt("請輸入管理員密碼", true);
+                if(pass === null) return; 
 
-        // 使用Firebase驗證代替本地密碼
-        const isValid = await verifyAdminPassword(pass);
-        if (isValid) {
-            toggleSettings();
-        } else {
-            alert("密碼錯誤 (Invalid Password)");
-            setTimeout(() => location.reload(), 2000);
+                if (pass === adminPassword) {
+                    toggleSettings();
+                } else {
+                    alert("密碼錯誤 (Invalid Password)");
+                    setTimeout(() => location.reload(), 2000); // 2秒後自動刷新
+                }
+            } else {
+                toggleSettings();
+            }
         }
-    } else {
-        toggleSettings();
-    }
-}
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
@@ -871,12 +864,7 @@
             };
         }
 
-    // 替換整個事件監聽器
-window.addEventListener('beforeunload', (e) => {
-    if(state.isRunning) {
-        return "系統正在運行中，確定要離開嗎？";
-    }
-});
+        window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
 
     </script>
 </body>
