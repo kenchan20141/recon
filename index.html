@@ -519,11 +519,6 @@
                 document.getElementById('loading-msg').innerText = "AI LOAD FAILED";
                 document.getElementById('loading-msg').style.color = "var(--secondary-color)";
             }
-
-            // 每次頁面載入時都清除可能的本地狀態
-if (state.isRunning) {
-  stopSystem(false);
-}
         }
         init();
 
@@ -627,14 +622,6 @@ async function verifySessionWithFirebase() {
 
         
         async function attemptStopSystem() {
-
-// 在這兩個函數開頭添加
-if (!navigator.onLine) {
-  alert("需要網路連線進行驗證");
-  return;
-}
-
-            
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
             if(pass === null) return; 
 
@@ -666,7 +653,8 @@ if (!navigator.onLine) {
         database.ref('sessions/' + sessionId + '/end_time').set(new Date().toISOString());
     }
     
-
+    // 清除本地標記
+    localStorage.removeItem('monitor_active');
 }
 
         function updateUI(active) {
@@ -810,24 +798,25 @@ function checkStatus(targetPresent, motionScore, now) {
         }
 
         // --- ANTI-TAMPER ---
-     function startIntegrityCheck() {
-  state.integrityCheckInterval = setInterval(async () => {
-    if (!state.isRunning || state.isToilet) return;
-    
-    try {
-      const snapshot = await database.ref('sessions/' + sessionId).once('value');
-      if (!snapshot.exists() || snapshot.val().status !== 'active') {
-        console.warn("Session invalidated on Firebase");
-        logToCloud("SEVERE", "Session 被遠端終止", true);
-        stopSystem(false);
-      }
-    } catch (error) {
-      console.error("Firebase validation failed:", error);
-      logToCloud("WARNING", "無法連接 Firebase 進行驗證", false);
-      // 當無法連接到 Firebase 時，立即停止系統以確保安全
-      stopSystem(false);
-    }
-  }, 5000); // 每5秒檢查一次，提高安全性
+      function startIntegrityCheck() {
+    state.integrityCheckInterval = setInterval(async () => {
+        if (!state.isRunning || state.isToilet) return;
+        
+        try {
+            const snapshot = await database.ref('sessions/' + sessionId + '/status').once('value');
+            const isValid = snapshot.exists() && snapshot.val() === 'active';
+            
+            if (!isValid) {
+                console.warn("Session invalidated on Firebase");
+                logToCloud("SEVERE", "Session 被遠端終止", true);
+                stopSystem(false);
+            }
+        } catch (error) {
+            console.error("Firebase validation failed:", error);
+            // 不立即終止，只記錄錯誤
+            logToCloud("WARNING", "無法連接 Firebase 進行驗證", false);
+        }
+    }, 10000); // 每10秒檢查一次，減少頻率
 }
 
         document.addEventListener("visibilitychange", () => {
@@ -864,14 +853,6 @@ function checkStatus(targetPresent, motionScore, now) {
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
         async function attemptToggleSettings() {
-
-// 在這兩個函數開頭添加
-if (!navigator.onLine) {
-  alert("需要網路連線進行驗證");
-  return;
-}
-
-            
             const panel = document.getElementById('settings-panel');
             
             if (!panel.classList.contains('open')) {
@@ -949,4 +930,4 @@ if (!navigator.onLine) {
 
     </script>
 </body>
-                </html>
+    </html>
