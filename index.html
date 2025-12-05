@@ -387,7 +387,8 @@
 
                 modal.classList.add('active');
                 
-                setTimeout(() => inputEl.focus(), 100);
+                // ★★★ KEY CHANGE: Removed inputEl.focus() to prevent auto keyboard popup ★★★
+                // The user must tap the input box manually to type.
 
                 const close = (val) => {
                     modal.classList.remove('active');
@@ -567,7 +568,6 @@
 
         // ★★★ MODIFIED: STOP SYSTEM (OFFLINE-CAPABLE) ★★★
         async function attemptStopSystem() {
-            // We no longer require navigator.onLine check for password logic
             const passInput = await showInputPrompt("請輸入密碼以終止監控", true);
             if(passInput === null) return; 
 
@@ -864,4 +864,4 @@
 
     </script>
 </body>
-                </html>
+</html>
