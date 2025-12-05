@@ -4,861 +4,928 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-    <!-- SECURITY: Content Security Policy (CSP) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
 
-    <title>AI RECON - Secure Monitor</title>
+code
+Code
+download
+content_copy
+expand_less
 
-    <!-- Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<!-- SECURITY: Content Security Policy (CSP) -->
 
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+<!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源 -->
 
-    <style>
-        :root {
-            --primary-color: #00f3ff;
-            --secondary-color: #ff0055;
-            --success-color: #00ff9d;
-            --warning-color: #ffcc00;
-            --bg-color: #050505;
-            --panel-bg: rgba(15, 25, 35, 0.98);
-            --font-main: 'Orbitron', sans-serif;
-            --font-data: 'Rajdhani', sans-serif;
-        }
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
 
-        * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+<title>AI RECON - Secure Monitor</title>
 
-        body {
-            margin: 0; padding: 0;
-            background-color: var(--bg-color);
-            background-image: linear-gradient(rgba(0, 243, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 243, 255, 0.05) 1px, transparent 1px);
-            background-size: 30px 30px;
-            color: var(--primary-color);
-            font-family: var(--font-main);
-            height: 100vh;
-            display: flex; flex-direction: column; align-items: center; overflow-x: hidden;
-            font-size: 18px; 
-            padding-bottom: 40px;
-        }
+<!-- Libraries -->
 
-        /* HEADER */
-        header {
-            width: 100%; padding: 15px 30px;
-            display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 2px solid var(--primary-color);
-            background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 100;
-        }
-        
-        .brand { font-size: 1.6rem; letter-spacing: 2px; text-shadow: 0 0 10px var(--primary-color); font-weight: 700; white-space: nowrap; }
-        .status-bar { display: flex; gap: 25px; font-family: var(--font-data); font-size: 1.4rem; font-weight: 600; white-space: nowrap; }
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
-        @media (max-width: 600px) {
-            header { padding: 12px 15px; }
-            .brand { font-size: 1rem; letter-spacing: 0px; }
-            .status-bar { font-size: 0.85rem; gap: 10px; }
-        }
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 
-        .led { width: 12px; height: 12px; border-radius: 50%; background: #333; box-shadow: 0 0 5px #333; transition: 0.3s; }
-        .led.on { background: var(--primary-color); box-shadow: 0 0 15px var(--primary-color); }
-        .led.scan { background: var(--success-color); box-shadow: 0 0 15px var(--success-color); animation: pulse-green 1s infinite; }
-        .led.err { background: var(--secondary-color); box-shadow: 0 0 15px var(--secondary-color); animation: pulse 0.5s infinite; }
-        
-        @keyframes pulse { 50% { opacity: 0.3; } }
-        @keyframes pulse-green { 50% { opacity: 0.5; box-shadow: 0 0 25px var(--success-color); } }
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-        /* VIEWPORT */
-        .viewport-wrapper { position: relative; width: 94%; max-width: 900px; margin-top: 15px; }
-        .viewport {
-            position: relative; width: 100%; aspect-ratio: 4/3;
-            border: 2px solid #333; background: #000; overflow: hidden;
-            box-shadow: 0 0 40px rgba(0,0,0,0.6); transition: border-color 0.3s;
-        }
-        .viewport.active { border-color: var(--primary-color); }
-        .viewport.verified { border-color: var(--success-color); box-shadow: 0 0 20px rgba(0, 255, 157, 0.3); }
-        .viewport.alert { border-color: var(--secondary-color); box-shadow: 0 0 40px var(--secondary-color); }
-        
-        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        
-        /* BUFFER BAR */
-        .time-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 6px; background: #222; z-index: 25; }
-        .time-bar { height: 100%; width: 100%; background: var(--primary-color); transition: width 0.1s linear; }
-        
-        #session-timer-display { color: #fff; font-weight: bold; }
+<!-- Fonts -->
 
-        /* OVERLAYS */
-        .overlay-msg {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: var(--primary-color); z-index: 30; background: rgba(0,0,0,0.85);
-            padding: 20px; border: 2px solid var(--primary-color); text-align: center;
-            font-size: 1.2rem;
-        }
-        
-        #toilet-screen {
-            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.96); z-index: 50; flex-direction: column; justify-content: center; align-items: center;
-        }
-        #toilet-timer { font-size: 5rem; color: var(--warning-color); margin: 30px 0; font-family: var(--font-data); }
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
 
-        /* CONTROLS */
-        .controls { width: 100%; margin-top: 15px; display: flex; flex-direction: column; gap: 12px; }
-        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
-        
-        button {
-            flex: 1; padding: 15px 5px; min-width: 120px;
-            background: rgba(0, 243, 255, 0.08); border: 1px solid var(--primary-color);
-            color: var(--primary-color); font-family: var(--font-main); cursor: pointer;
-            transition: 0.2s; text-transform: uppercase;
-            font-size: 1rem; font-weight: 700;
-        }
-        button:hover:not(:disabled) { background: var(--primary-color); color: #000; box-shadow: 0 0 20px var(--primary-color); }
-        button:disabled { border-color: #444; color: #555; cursor: not-allowed; background: transparent; }
-        .btn-danger { border-color: var(--secondary-color); color: var(--secondary-color); }
-        .btn-danger:hover:not(:disabled) { background: var(--secondary-color); color: #fff; box-shadow: 0 0 20px var(--secondary-color); }
+<style>
+    :root {
+        --primary-color: #00f3ff;
+        --secondary-color: #ff0055;
+        --success-color: #00ff9d;
+        --warning-color: #ffcc00;
+        --bg-color: #050505;
+        --panel-bg: rgba(15, 25, 35, 0.98);
+        --font-main: 'Orbitron', sans-serif;
+        --font-data: 'Rajdhani', sans-serif;
+    }
 
-        /* SETTINGS */
-        .settings-panel {
-            background: var(--panel-bg); border: 1px solid #333;
-            max-height: 0; overflow: hidden; transition: max-height 0.4s ease;
-            display: flex; flex-direction: column; padding: 0 15px;
-        }
-        .settings-panel.open { max-height: 800px; border-color: var(--primary-color); padding: 20px; margin-bottom: 40px; }
-        
-        .setting-row {
-            display: flex; justify-content: space-between; align-items: center;
-            border-bottom: 1px solid #444; padding: 12px 0; 
-            color: #ddd; font-family: var(--font-data);
-            font-size: 1.1rem;
-        }
-        
-        .setting-row input {
-            background: #050505; 
-            border: 1px solid var(--primary-color); 
-            color: var(--primary-color);
-            padding: 8px; width: 90px; text-align: center; 
-            font-family: var(--font-main);
-            font-size: 1.2rem; 
-            font-weight: bold;
-        }
-        .setting-row input:focus { box-shadow: 0 0 15px var(--primary-color); outline: none; }
+    * { box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
 
-        .log-box { margin-top: 20px; border-top: 2px solid #333; padding-top: 10px; }
-        #log-display {
-            width: 100%; height: 120px; background: #000; border: 1px solid #444;
-            padding: 10px; font-family: 'Courier New', monospace; font-size: 0.85rem;
-            color: var(--secondary-color); overflow-y: auto; white-space: pre-wrap;
-        }
-        .log-entry { border-bottom: 1px solid #222; margin-bottom: 5px; padding-bottom: 2px; }
+    body {
+        margin: 0; padding: 0;
+        background-color: var(--bg-color);
+        background-image: linear-gradient(rgba(0, 243, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 243, 255, 0.05) 1px, transparent 1px);
+        background-size: 30px 30px;
+        color: var(--primary-color);
+        font-family: var(--font-main);
+        height: 100vh;
+        display: flex; flex-direction: column; align-items: center; overflow-x: hidden;
+        font-size: 18px; 
+        padding-bottom: 40px;
+    }
 
-        /* PRIVACY & CONSENT MODAL */
-        .consent-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); backdrop-filter: blur(8px);
-            z-index: 999; display: flex; align-items: center; justify-content: center;
-        }
-        
-        .consent-box {
-            background: #0a0a0a; border: 2px solid var(--primary-color);
-            padding: 30px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;
-            box-shadow: 0 0 40px rgba(0, 243, 255, 0.15);
-            text-align: left; color: #ccc;
-        }
+    /* HEADER */
+    header {
+        width: 100%; padding: 15px 30px;
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 2px solid var(--primary-color);
+        background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 100;
+    }
+    
+    .brand { font-size: 1.6rem; letter-spacing: 2px; text-shadow: 0 0 10px var(--primary-color); font-weight: 700; white-space: nowrap; }
+    .status-bar { display: flex; gap: 25px; font-family: var(--font-data); font-size: 1.4rem; font-weight: 600; white-space: nowrap; }
 
-        .consent-box h2 { color: var(--primary-color); margin-top: 0; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .consent-box h4 { color: #fff; margin: 15px 0 5px 0; }
-        .consent-box p { font-size: 0.9rem; line-height: 1.5; margin-bottom: 10px; }
-        .consent-box ul { margin: 5px 0 15px 20px; padding: 0; font-size: 0.9rem; }
-        .consent-box li { margin-bottom: 5px; }
+    @media (max-width: 600px) {
+        header { padding: 12px 15px; }
+        .brand { font-size: 1rem; letter-spacing: 0px; }
+        .status-bar { font-size: 0.85rem; gap: 10px; }
+    }
 
-        .consent-btn {
-            display: block; width: 100%; padding: 15px; margin-top: 20px;
-            background: var(--primary-color); color: #000; font-weight: bold; font-size: 1.1rem;
-            border: none; cursor: pointer; transition: 0.3s;
-        }
-        .consent-btn:hover { box-shadow: 0 0 20px var(--primary-color); transform: scale(1.02); }
+    .led { width: 12px; height: 12px; border-radius: 50%; background: #333; box-shadow: 0 0 5px #333; transition: 0.3s; }
+    .led.on { background: var(--primary-color); box-shadow: 0 0 15px var(--primary-color); }
+    .led.scan { background: var(--success-color); box-shadow: 0 0 15px var(--success-color); animation: pulse-green 1s infinite; }
+    .led.err { background: var(--secondary-color); box-shadow: 0 0 15px var(--secondary-color); animation: pulse 0.5s infinite; }
+    
+    @keyframes pulse { 50% { opacity: 0.3; } }
+    @keyframes pulse-green { 50% { opacity: 0.5; box-shadow: 0 0 25px var(--success-color); } }
 
-        /* INPUT PROMPT MODAL */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); z-index: 200; display: none; align-items: center; justify-content: center;
-        }
-        .modal-overlay.active { display: flex; }
-        .modal-box {
-            background: #0a0a0a; border: 2px solid var(--primary-color);
-            padding: 30px; width: 90%; max-width: 400px; text-align: center;
-        }
-        .modal-input {
-            width: 100%; padding: 12px; margin-bottom: 25px;
-            background: #111; border: 1px solid #333; border-left: 4px solid var(--primary-color);
-            color: #fff; font-family: var(--font-main); font-size: 1.2rem; text-align: center;
-        }
-        .modal-btns { display: flex; gap: 15px; }
+    /* VIEWPORT */
+    .viewport-wrapper { position: relative; width: 94%; max-width: 900px; margin-top: 15px; }
+    .viewport {
+        position: relative; width: 100%; aspect-ratio: 4/3;
+        border: 2px solid #333; background: #000; overflow: hidden;
+        box-shadow: 0 0 40px rgba(0,0,0,0.6); transition: border-color 0.3s;
+    }
+    .viewport.active { border-color: var(--primary-color); }
+    .viewport.verified { border-color: var(--success-color); box-shadow: 0 0 20px rgba(0, 255, 157, 0.3); }
+    .viewport.alert { border-color: var(--secondary-color); box-shadow: 0 0 40px var(--secondary-color); }
+    
+    video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+    
+    /* BUFFER BAR */
+    .time-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 6px; background: #222; z-index: 25; }
+    .time-bar { height: 100%; width: 100%; background: var(--primary-color); transition: width 0.1s linear; }
+    
+    #session-timer-display { color: #fff; font-weight: bold; }
 
-        /* COPYRIGHT FOOTER */
-        .copyright-footer {
-            position: fixed; bottom: 0; right: 0; padding: 5px 10px;
-            background-color: #f1f1f1; z-index: 150; border-top-left-radius: 5px;
-        }
-        .copyright-footer p { margin: 0; font-size: 14px; color: #000; font-family: sans-serif; }
-        @media (max-width: 600px) { .copyright-footer p { font-size: 12px; } }
-    </style>
+    /* OVERLAYS */
+    .overlay-msg {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        color: var(--primary-color); z-index: 30; background: rgba(0,0,0,0.85);
+        padding: 20px; border: 2px solid var(--primary-color); text-align: center;
+        font-size: 1.2rem;
+    }
+    
+    #toilet-screen {
+        display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.96); z-index: 50; flex-direction: column; justify-content: center; align-items: center;
+    }
+    #toilet-timer { font-size: 5rem; color: var(--warning-color); margin: 30px 0; font-family: var(--font-data); }
+
+    /* CONTROLS */
+    .controls { width: 100%; margin-top: 15px; display: flex; flex-direction: column; gap: 12px; }
+    .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+    
+    button {
+        flex: 1; padding: 15px 5px; min-width: 120px;
+        background: rgba(0, 243, 255, 0.08); border: 1px solid var(--primary-color);
+        color: var(--primary-color); font-family: var(--font-main); cursor: pointer;
+        transition: 0.2s; text-transform: uppercase;
+        font-size: 1rem; font-weight: 700;
+    }
+    button:hover:not(:disabled) { background: var(--primary-color); color: #000; box-shadow: 0 0 20px var(--primary-color); }
+    button:disabled { border-color: #444; color: #555; cursor: not-allowed; background: transparent; }
+    .btn-danger { border-color: var(--secondary-color); color: var(--secondary-color); }
+    .btn-danger:hover:not(:disabled) { background: var(--secondary-color); color: #fff; box-shadow: 0 0 20px var(--secondary-color); }
+
+    /* SETTINGS */
+    .settings-panel {
+        background: var(--panel-bg); border: 1px solid #333;
+        max-height: 0; overflow: hidden; transition: max-height 0.4s ease;
+        display: flex; flex-direction: column; padding: 0 15px;
+    }
+    .settings-panel.open { max-height: 800px; border-color: var(--primary-color); padding: 20px; margin-bottom: 40px; }
+    
+    .setting-row {
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 1px solid #444; padding: 12px 0; 
+        color: #ddd; font-family: var(--font-data);
+        font-size: 1.1rem;
+    }
+    
+    .setting-row input {
+        background: #050505; 
+        border: 1px solid var(--primary-color); 
+        color: var(--primary-color);
+        padding: 8px; width: 90px; text-align: center; 
+        font-family: var(--font-main);
+        font-size: 1.2rem; 
+        font-weight: bold;
+    }
+    .setting-row input:focus { box-shadow: 0 0 15px var(--primary-color); outline: none; }
+
+    .log-box { margin-top: 20px; border-top: 2px solid #333; padding-top: 10px; }
+    #log-display {
+        width: 100%; height: 120px; background: #000; border: 1px solid #444;
+        padding: 10px; font-family: 'Courier New', monospace; font-size: 0.85rem;
+        color: var(--secondary-color); overflow-y: auto; white-space: pre-wrap;
+    }
+    .log-entry { border-bottom: 1px solid #222; margin-bottom: 5px; padding-bottom: 2px; }
+
+    /* PRIVACY & CONSENT MODAL */
+    .consent-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.95); backdrop-filter: blur(8px);
+        z-index: 999; display: flex; align-items: center; justify-content: center;
+    }
+    
+    .consent-box {
+        background: #0a0a0a; border: 2px solid var(--primary-color);
+        padding: 30px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+        box-shadow: 0 0 40px rgba(0, 243, 255, 0.15);
+        text-align: left; color: #ccc;
+    }
+
+    .consent-box h2 { color: var(--primary-color); margin-top: 0; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px; }
+    .consent-box h4 { color: #fff; margin: 15px 0 5px 0; }
+    .consent-box p { font-size: 0.9rem; line-height: 1.5; margin-bottom: 10px; }
+    .consent-box ul { margin: 5px 0 15px 20px; padding: 0; font-size: 0.9rem; }
+    .consent-box li { margin-bottom: 5px; }
+
+    .consent-btn {
+        display: block; width: 100%; padding: 15px; margin-top: 20px;
+        background: var(--primary-color); color: #000; font-weight: bold; font-size: 1.1rem;
+        border: none; cursor: pointer; transition: 0.3s;
+    }
+    .consent-btn:hover { box-shadow: 0 0 20px var(--primary-color); transform: scale(1.02); }
+
+    /* INPUT PROMPT MODAL */
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8); z-index: 200; display: none; align-items: center; justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box {
+        background: #0a0a0a; border: 2px solid var(--primary-color);
+        padding: 30px; width: 90%; max-width: 400px; text-align: center;
+    }
+    .modal-input {
+        width: 100%; padding: 12px; margin-bottom: 25px;
+        background: #111; border: 1px solid #333; border-left: 4px solid var(--primary-color);
+        color: #fff; font-family: var(--font-main); font-size: 1.2rem; text-align: center;
+    }
+    .modal-btns { display: flex; gap: 15px; }
+
+    /* COPYRIGHT FOOTER */
+    .copyright-footer {
+        position: fixed; bottom: 0; right: 0; padding: 5px 10px;
+        background-color: #f1f1f1; z-index: 150; border-top-left-radius: 5px;
+    }
+    .copyright-footer p { margin: 0; font-size: 14px; color: #000; font-family: sans-serif; }
+    @media (max-width: 600px) { .copyright-footer p { font-size: 12px; } }
+</style>
+
 </head>
 <body>
 
-    <!-- PRIVACY CONSENT MODAL -->
-    <div id="consent-modal" class="consent-overlay">
-        <div class="consent-box">
-            <h2>PRIVACY & DATA CONSENT<br><span style="font-size:0.8em">隱私權與資安聲明</span></h2>
-            <h4>1. Edge Computing Technology (邊緣運算技術)</h4>
-            <p>This system uses local browser-based processing (face-api.js). No video stream is ever sent to a server.</p>
-            <p>本系統使用瀏覽器端運算技術。影像畫面<b>絕不會</b>上傳至任何伺服器。</p>
-            <h4>2. Data Collection (資料收集)</h4>
-            <p>Only timestamps of potential violations (e.g., "Left seat at 10:00") are logged. No images are stored.</p>
-            <p>僅記錄違規事件的時間點（如：10:00 離開座位），不儲存影像。</p>
-            <h4>3. Data Security (資料保存)</h4>
-            <p>Biometric data is stored in RAM only and cleared upon tab closure.</p>
-            <p>生物特徵僅存於暫存記憶體 (RAM)，關閉分頁後即自動清除。</p>
-            <h4 style="color:var(--success-color);">4. Security Architecture (資安防護架構)</h4>
-            <p>We implement defense-in-depth against XSS (Cross-Site Scripting):</p>
-            <ul>
-                <li><b>Input Sanitization (輸入淨化):</b> All user inputs are sanitized to strip HTML tags and database-illegal characters before processing.</li>
-                <li><b>Content Security Policy (CSP):</b> Strict browser policies block unauthorized scripts from executing.</li>
-                <li><b>Safe DOM Rendering:</b> Logs are displayed using text-nodes only, preventing malicious code injection.</li>
-            </ul>
-            <p>本工具採用多層防禦機制對抗跨站腳本攻擊 (XSS)：</p>
-            <ul>
-                <li><b>輸入淨化：</b>所有輸入皆經過過濾，自動剔除 HTML 標籤與特殊字符。</li>
-                <li><b>CSP 策略：</b>瀏覽器僅允許執行授權來源的程式碼。</li>
-                <li><b>安全渲染：</b>日誌僅以純文字格式顯示，杜絕惡意代碼注入的可能。</li>
-            </ul>
-            <button class="consent-btn" onclick="acceptConsent()">I AGREE / 我同意</button>
+
+code
+Code
+download
+content_copy
+expand_less
+
+<!-- PRIVACY CONSENT MODAL -->
+
+<div id="consent-modal" class="consent-overlay">
+    <div class="consent-box">
+        <h2>PRIVACY & DATA CONSENT<br><span style="font-size:0.8em">隱私權與資安聲明</span></h2>
+        <h4>1. Edge Computing Technology (邊緣運算技術)</h4>
+        <p>This system uses local browser-based processing (face-api.js). No video stream is ever sent to a server.</p>
+        <p>本系統使用瀏覽器端運算技術。影像畫面<b>絕不會</b>上傳至任何伺服器。</p>
+        <h4>2. Data Collection (資料收集)</h4>
+        <p>Only timestamps of potential violations (e.g., "Left seat at 10:00") are logged. No images are stored.</p>
+        <p>僅記錄違規事件的時間點（如：10:00 離開座位），不儲存影像。</p>
+        <h4>3. Data Security (資料保存)</h4>
+        <p>Biometric data is stored in RAM only and cleared upon tab closure.</p>
+        <p>生物特徵僅存於暫存記憶體 (RAM)，關閉分頁後即自動清除。</p>
+        <h4 style="color:var(--success-color);">4. Security Architecture (資安防護架構)</h4>
+        <p>We implement defense-in-depth against XSS (Cross-Site Scripting):</p>
+        <ul>
+            <li><b>Input Sanitization (輸入淨化):</b> All user inputs are sanitized to strip HTML tags and database-illegal characters before processing.</li>
+            <li><b>Content Security Policy (CSP):</b> Strict browser policies block unauthorized scripts from executing.</li>
+            <li><b>Safe DOM Rendering:</b> Logs are displayed using text-nodes only, preventing malicious code injection.</li>
+        </ul>
+        <p>本工具採用多層防禦機制對抗跨站腳本攻擊 (XSS)：</p>
+        <ul>
+            <li><b>輸入淨化：</b>所有輸入皆經過過濾，自動剔除 HTML 標籤與特殊字符。</li>
+            <li><b>CSP 策略：</b>瀏覽器僅允許執行授權來源的程式碼。</li>
+            <li><b>安全渲染：</b>日誌僅以純文字格式顯示，杜絕惡意代碼注入的可能。</li>
+        </ul>
+        <button class="consent-btn" onclick="acceptConsent()">I AGREE / 我同意</button>
+    </div>
+</div>
+
+<header>
+    <div class="brand">AI<span style="color:var(--secondary-color)"> RECON</span></div>
+    <div class="status-bar">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <div id="led-status" class="led"></div>
+            <span id="text-status">WAITING FOR CONSENT</span>
+        </div>
+        <div>
+            TIME: <span id="session-timer-display">--:--</span>
         </div>
     </div>
+</header>
 
-    <header>
-        <div class="brand">AI<span style="color:var(--secondary-color)"> RECON</span></div>
-        <div class="status-bar">
-            <div style="display:flex; align-items:center; gap:8px;">
-                <div id="led-status" class="led"></div>
-                <span id="text-status">WAITING FOR CONSENT</span>
-            </div>
-            <div>
-                TIME: <span id="session-timer-display">--:--</span>
-            </div>
-        </div>
-    </header>
-
-    <div class="viewport-wrapper">
-        <div class="viewport" id="viewport">
-            <div id="loading-msg" class="overlay-msg">INITIALIZING AI...</div>
-            <!-- Face Registration Overlay -->
-            <div id="reg-overlay" class="overlay-msg" style="display:none; border-color:var(--success-color); color:var(--success-color);">
-                <h3>FACE REGISTRATION</h3>
-                <p>LOOK AT CAMERA</p>
-                <div id="reg-countdown" style="font-size:3rem; font-weight:bold;">3</div>
-            </div>
-            <video id="webcam" autoplay playsinline muted></video>
-            <canvas id="canvas"></canvas>
-            
-            <div class="time-bar-container">
-                <div id="timeout-bar" class="time-bar"></div>
-            </div>
-
-            <div id="toilet-screen">
-                <h2 style="color:var(--warning-color)">RESTROOM BREAK</h2>
-                <div id="toilet-timer">00:00</div>
-                <button id="btn-return-early" style="max-width:250px;">I HAVE RETURNED</button>
-            </div>
+<div class="viewport-wrapper">
+    <div class="viewport" id="viewport">
+        <div id="loading-msg" class="overlay-msg">INITIALIZING AI...</div>
+        <!-- Face Registration Overlay -->
+        <div id="reg-overlay" class="overlay-msg" style="display:none; border-color:var(--success-color); color:var(--success-color);">
+            <h3>FACE REGISTRATION</h3>
+            <p>LOOK AT CAMERA</p>
+            <div id="reg-countdown" style="font-size:3rem; font-weight:bold;">3</div>
         </div>
 
-        <div class="controls">
-            <div class="btn-group">
-                <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
-                <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
-                <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
-                <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
-            </div>
 
-            <div class="settings-panel" id="settings-panel">
-                <h3 style="color:var(--primary-color); margin:0 0 15px 0; font-size:1.2rem;">CONFIGURATION</h3>
-                <div class="setting-row">
-                    <label>Min Target Matches</label>
-                    <input type="number" id="cfg-person" value="1" min="1" readonly style="opacity:0.5; cursor:not-allowed;">
-                </div>
-                <div class="setting-row">
-                    <label>Session Duration (Minutes)</label>
-                    <input type="number" id="cfg-duration" value="30" min="1" onchange="updateConfig()">
-                </div>
-                <div class="setting-row">
-                    <label>Toilet Duration (Minutes)</label>
-                    <input type="number" id="cfg-toilet-dur" value="5" min="1" onchange="updateConfig()">
-                </div>
-                <div class="setting-row">
-                    <label>Max Toilet Visits</label>
-                    <input type="number" id="cfg-toilet-max" value="1" min="0" onchange="updateConfig()">
-                </div>
-                <div class="log-box">
-                    <div style="color:var(--warning-color); margin-bottom:8px; font-size:1rem;">VIOLATION LOGS (XSS-SAFE RENDER)</div>
-                    <div id="log-display"></div>
-                    <div id="firebase-status" style="font-size:0.8rem; color:#666; text-align:right; margin-top:8px;">Connecting...</div>
-                </div>
-            </div>
-        </div>
+code
+Code
+download
+content_copy
+expand_less
+<video id="webcam" autoplay playsinline muted></video>
+<canvas id="canvas"></canvas>
+
+code
+Code
+download
+content_copy
+expand_less
+<div class="time-bar-container">
+    <div id="timeout-bar" class="time-bar"></div>
+</div>
+
+<div id="toilet-screen">
+    <h2 style="color:var(--warning-color)">RESTROOM BREAK</h2>
+    <div id="toilet-timer">00:00</div>
+    <button id="btn-return-early" style="max-width:250px;">I HAVE RETURNED</button>
+</div>
+</div>
+
+<div class="controls">
+    <div class="btn-group">
+        <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
+        <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
+        <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
+       <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
     </div>
 
-    <!-- SIMPLE INPUT MODAL -->
-    <div id="input-modal" class="modal-overlay">
-        <div class="modal-box">
-            <div class="modal-title" id="modal-msg">SESSION ID</div>
-            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-            <div class="modal-btns">
-                <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
-                <button id="modal-confirm-btn">CONFIRM</button>
-            </div>
+code
+Code
+download
+content_copy
+expand_less
+<div class="settings-panel" id="settings-panel">
+    <h3 style="color:var(--primary-color); margin:0 0 15px 0; font-size:1.2rem;">CONFIGURATION</h3>
+    <div class="setting-row">
+        <label>Min Target Matches</label>
+        <input type="number" id="cfg-person" value="1" min="1" readonly style="opacity:0.5; cursor:not-allowed;">
+    </div>
+    <div class="setting-row">
+        <label>Session Duration (Minutes)</label>
+        <input type="number" id="cfg-duration" value="30" min="1" onchange="updateConfig()">
+    </div>
+    <div class="setting-row">
+        <label>Toilet Duration (Minutes)</label>
+        <input type="number" id="cfg-toilet-dur" value="5" min="1" onchange="updateConfig()">
+    </div>
+    <div class="setting-row">
+        <label>Max Toilet Visits</label>
+        <input type="number" id="cfg-toilet-max" value="1" min="0" onchange="updateConfig()">
+    </div>
+    <div class="log-box">
+        <div style="color:var(--warning-color); margin-bottom:8px; font-size:1rem;">VIOLATION LOGS (XSS-SAFE RENDER)</div>
+        <div id="log-display"></div>
+        <div id="firebase-status" style="font-size:0.8rem; color:#666; text-align:right; margin-top:8px;">Connecting...</div>
+    </div>
+</div>
+</div>
+</div>
+
+<!-- SIMPLE INPUT MODAL -->
+
+<div id="input-modal" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-title" id="modal-msg">SESSION ID</div>
+        <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off">
+        <div class="modal-btns">
+            <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
+            <button id="modal-confirm-btn">CONFIRM</button>
         </div>
     </div>
+</div>
 
-    <footer class="copyright-footer">
-        <p>Copyright © 2025 陳冠健. All rights reserved.</p>
-    </footer>
+<footer class="copyright-footer">
+    <p>Copyright © 2025 陳冠健. All rights reserved.</p>
+</footer>
 
-    <audio id="alarm-sound" loop src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
 
-    <script>
-        // --- FIREBASE CONFIG ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyBQ1AegbgEDvksAivyHFWA_1DrIDoRcWqw",
-            authDomain: "detector-1f676.firebaseapp.com",
-            databaseURL: "https://detector-1f676-default-rtdb.firebaseio.com",
-            projectId: "detector-1f676",
-            storageBucket: "detector-1f676.firebasestorage.app",
-            messagingSenderId: "801506387434",
-            appId: "1:801506387434:web:4b51c9edbde5c0facf3e93"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
+<audio id="alarm-sound" loop src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg"></audio>
 
-        let sessionId = ""; 
-        let consentGiven = false;
-        
-        // REVISION: Hardcoded password as requested to prevent fetch failures
-        const adminPassword = "ckkchi"; 
+<script>
+    // --- FIREBASE CONFIG ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyBQ1AegbgEDvksAivyHFWA_1DrIDoRcWqw",
+        authDomain: "detector-1f676.firebaseapp.com",
+        databaseURL: "https://detector-1f676-default-rtdb.firebaseio.com",
+        projectId: "detector-1f676",
+        storageBucket: "detector-1f676.firebasestorage.app",
+        messagingSenderId: "801506387434",
+        appId: "1:801506387434:web:4b51c9edbde5c0facf3e93"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
 
-        // --- SECURITY: XSS PREVENTION ---
-        const sanitizeInput = (str) => {
-            if (!str) return "";
-            const div = document.createElement('div');
-            div.textContent = str;
-            let sanitized = div.innerHTML;
-            sanitized = sanitized.replace(/[.$#[\]/]/g, "_"); 
-            return sanitized;
-        };
+    let sessionId = ""; 
+    let consentGiven = false;
+    let adminPassword = "";
 
-        const getDateId = () => {
-            const now = new Date();
-            const pad = n => n.toString().padStart(2, '0');
-            return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        };
+    // --- SECURITY: XSS PREVENTION ---
+    const sanitizeInput = (str) => {
+        if (!str) return "";
+        const div = document.createElement('div');
+        div.textContent = str;
+        let sanitized = div.innerHTML;
+        sanitized = sanitized.replace(/[.$#[\]/]/g, "_"); 
+        return sanitized;
+    };
 
-        // --- MODAL LOGIC (KEYBOARD FIX) ---
-        function acceptConsent() {
-            document.getElementById('consent-modal').style.display = 'none';
-            consentGiven = true;
-            document.getElementById('text-status').innerText = "SYSTEM IDLE (系統待機)";
-            if(state.isAiReady) document.getElementById('btn-start').disabled = false;
-        }
+    const getDateId = () => {
+        const now = new Date();
+        const pad = n => n.toString().padStart(2, '0');
+        return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+    };
 
-        function showInputPrompt(message, isPassword = false) {
-            return new Promise((resolve) => {
-                const modal = document.getElementById('input-modal');
-                const msgEl = document.getElementById('modal-msg');
-                const inputEl = document.getElementById('modal-input');
-                const confirmBtn = document.getElementById('modal-confirm-btn');
-                const cancelBtn = document.getElementById('modal-cancel-btn');
-
-                msgEl.innerText = message;
-                inputEl.value = '';
-                inputEl.type = isPassword ? 'password' : 'text'; 
-                inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
-
-                modal.classList.add('active');
-                
-                // REVISION: Removed inputEl.focus() to prevent auto-keyboard popup
-                
-                const close = (val) => {
-                    modal.classList.remove('active');
-                    confirmBtn.onclick = null;
-                    cancelBtn.onclick = null;
-                    inputEl.onkeydown = null;
-                    resolve(val);
-                };
-
-                confirmBtn.onclick = () => close(inputEl.value);
-                cancelBtn.onclick = () => close(null);
-                
-                inputEl.onkeydown = (e) => {
-                    if (e.key === 'Enter') close(inputEl.value);
-                    if (e.key === 'Escape') close(null);
-                };
-            });
-        }
-
-        // --- CORE STATE ---
-        const video = document.getElementById('webcam');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const viewport = document.getElementById('viewport');
-        const timeoutBar = document.getElementById('timeout-bar');
-        const alarmAudio = document.getElementById('alarm-sound');
-        const logDisplay = document.getElementById('log-display');
-
-        const state = {
-            isAiReady: false,
-            isRunning: false,
-            isToilet: false,
-            toiletVisits: 0,
-            animId: null,
-            prevFrameData: null,
-            
-            referenceDescriptor: null,
-            isTargetPresent: false,
-            
-            lastLiveTimestamp: 0,
-            sessionEndTime: 0,
-            lastAlarmType: null,
-            integrityCheckInterval: null,
-            hasViolated: false,
-            
-            lastProcessTime: 0,
-            currentDetections: [], 
-            currentMotionScore: 100
-        };
-        
-        const PROCESS_INTERVAL = 200; 
-
-        const config = {
-            matchThreshold: 0.55,
-            maxToiletVisits: 1, 
-            toiletDuration: 5, 
-            sessionMinutes: 30, 
-            timeoutMs: 5000,
-            motionThreshold: 0.5 
-        };
-
-        const diffCanvas = document.createElement('canvas');
-        diffCanvas.width = 64; diffCanvas.height = 48;
-        const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
-
-        // --- INIT & FACE API ---
-        async function init() {
-            // REVISION: Removed async fetchAdminPassword call here.
-            // Using hardcoded password makes this function purely for AI/Camera init.
-            
-            try {
-                const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-                await Promise.all([
-                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-                ]);
-
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: 640, height: 480 },
-                    audio: false
-                });
-                video.srcObject = stream;
-                
-                video.onloadedmetadata = () => {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    state.isAiReady = true;
-                    document.getElementById('loading-msg').style.display = 'none';
-                    if(consentGiven) document.getElementById('btn-start').disabled = false;
-                    document.getElementById('firebase-status').innerText = "System Ready (Logging Active)";
-                };
-
-            } catch (e) {
-                console.error(e);
-                document.getElementById('loading-msg').innerText = "AI LOAD FAILED";
-                document.getElementById('loading-msg').style.color = "var(--secondary-color)";
-            }
-
-            if (state.isRunning) stopSystem(false);
-        }
-        init();
-
-        // --- START SEQUENCE ---
-        async function attemptStart() {
-            if(!consentGiven) return;
-            if(!state.isAiReady) {
-                alert("AI System initializing, please wait...");
-                return;
-            }
-
-            const inputName = await showInputPrompt("YOUR NAME");
-            if (inputName && inputName.trim() !== "") {
-                sessionId = sanitizeInput(inputName.trim());
-            } else {
-                sessionId = getDateId();
-            }
-            
-            startFaceRegistration();
-        }
-
-        async function startFaceRegistration() {
-            const regOverlay = document.getElementById('reg-overlay');
-            const regCount = document.getElementById('reg-countdown');
-            regOverlay.style.display = 'block';
-            
-            let count = 3;
-            regCount.innerText = count;
-            
-            const timer = setInterval(async () => {
-                count--;
-                if(count > 0) {
-                    regCount.innerText = count;
+    // --- FETCH ADMIN PASSWORD ---
+    function fetchAdminPassword() {
+        database.ref('admin/password').once('value')
+            .then((snapshot) => {
+                if (snapshot.exists()) {
+                    adminPassword = snapshot.val();
+                    console.log("Admin config loaded.");
                 } else {
-                    clearInterval(timer);
-                    regCount.innerText = "LOCKING...";
-                    
-                    const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-                    
-                    if (detection) {
-                        state.referenceDescriptor = detection.descriptor;
-                        regOverlay.style.display = 'none';
-                        startSystem();
-                    } else {
-                        alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
-                        regOverlay.style.display = 'none';
-                        // Do not reload page, just let them try again
-                    }
+                    console.warn("No admin password found in DB.");
                 }
-            }, 1000);
+            })
+            .catch((error) => {
+                console.error("Firebase Read Error:", error);
+            });
+    }
+
+    // --- MODAL LOGIC ---
+    function acceptConsent() {
+        document.getElementById('consent-modal').style.display = 'none';
+        consentGiven = true;
+        document.getElementById('text-status').innerText = "SYSTEM IDLE (系統待機)";
+        if(state.isAiReady) document.getElementById('btn-start').disabled = false;
+    }
+
+    function showInputPrompt(message, isPassword = false) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('input-modal');
+            const msgEl = document.getElementById('modal-msg');
+            const inputEl = document.getElementById('modal-input');
+            const confirmBtn = document.getElementById('modal-confirm-btn');
+            const cancelBtn = document.getElementById('modal-cancel-btn');
+
+            msgEl.innerText = message;
+            inputEl.value = '';
+            inputEl.type = isPassword ? 'password' : 'text'; 
+            inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
+
+            modal.classList.add('active');
+            
+            const close = (val) => {
+                modal.classList.remove('active');
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                inputEl.onkeydown = null;
+                resolve(val);
+            };
+
+            confirmBtn.onclick = () => close(inputEl.value);
+            cancelBtn.onclick = () => close(null);
+            
+            inputEl.onkeydown = (e) => {
+                if (e.key === 'Enter') close(inputEl.value);
+                if (e.key === 'Escape') close(null);
+            };
+        });
+    }
+
+    // --- CORE STATE ---
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const viewport = document.getElementById('viewport');
+    const timeoutBar = document.getElementById('timeout-bar');
+    const alarmAudio = document.getElementById('alarm-sound');
+    const logDisplay = document.getElementById('log-display');
+
+    const state = {
+        isAiReady: false,
+        isRunning: false,
+        isToilet: false,
+        toiletVisits: 0,
+        animId: null,
+        prevFrameData: null,
+        
+        referenceDescriptor: null,
+        isTargetPresent: false,
+        
+        lastLiveTimestamp: 0,
+        sessionEndTime: 0,
+        lastAlarmType: null,
+        integrityCheckInterval: null,
+        hasViolated: false,
+        
+        lastProcessTime: 0,
+        currentDetections: [], 
+        currentMotionScore: 100
+    };
+    
+    const PROCESS_INTERVAL = 200; 
+
+    const config = {
+        matchThreshold: 0.55,
+        maxToiletVisits: 1, 
+        toiletDuration: 5, 
+        sessionMinutes: 30, 
+        timeoutMs: 5000,
+        motionThreshold: 0.5 
+    };
+
+    const diffCanvas = document.createElement('canvas');
+    diffCanvas.width = 64; diffCanvas.height = 48;
+    const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
+
+    // --- INIT & FACE API ---
+    async function init() {
+        fetchAdminPassword();
+
+        try {
+            const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+            await Promise.all([
+                faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+            ]);
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { width: 640, height: 480 },
+                audio: false
+            });
+            video.srcObject = stream;
+            
+            video.onloadedmetadata = () => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                state.isAiReady = true;
+                document.getElementById('loading-msg').style.display = 'none';
+                if(consentGiven) document.getElementById('btn-start').disabled = false;
+                document.getElementById('firebase-status').innerText = "System Ready";
+            };
+
+        } catch (e) {
+            console.error(e);
+            document.getElementById('loading-msg').innerText = "AI LOAD FAILED";
+            document.getElementById('loading-msg').style.color = "var(--secondary-color)";
         }
 
-        // --- SYSTEM CONTROL ---
-        function startSystem() {
-            state.isRunning = true;
-            state.hasViolated = false;
-            state.lastLiveTimestamp = Date.now(); 
-            state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
-            state.lastProcessTime = Date.now(); // Reset process time to prevent instant lag catch-up
-            
-            updateUI(true);
-            
-            // Async Firebase write, does not block execution
-            if(sessionId) {
-                database.ref('sessions/' + sessionId).set({
-                    start_time: new Date().toISOString(),
-                    status: 'active',
-                    config: {
-                        sessionMinutes: config.sessionMinutes,
-                        toiletDuration: config.toiletDuration,
-                        maxToiletVisits: config.maxToiletVisits
-                    }
-                }).catch(err => console.error("Firebase init warn:", err));
-            }
-            
-            startIntegrityCheck();
-            loop();
+        if (state.isRunning) stopSystem(false);
+    }
+    init();
+
+    // --- START SEQUENCE ---
+    async function attemptStart() {
+        if(!consentGiven) return;
+
+       const inputName = await showInputPrompt("YOUR NAME");
+        if (inputName && inputName.trim() !== "") {
+            sessionId = sanitizeInput(inputName.trim());
+        } else {
+            sessionId = getDateId();
         }
+        
+        startFaceRegistration();
+    }
 
-        async function attemptStopSystem() {
-            // Password check is now purely local and synchronous
-            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; 
-
-            if (pass === adminPassword) {
-                stopSystem(false);
+    async function startFaceRegistration() {
+        const regOverlay = document.getElementById('reg-overlay');
+        const regCount = document.getElementById('reg-countdown');
+        regOverlay.style.display = 'block';
+        
+        let count = 3;
+        regCount.innerText = count;
+        
+        const timer = setInterval(async () => {
+            count--;
+            if(count > 0) {
+                regCount.innerText = count;
             } else {
-                alert("密碼錯誤 (Invalid Password)");
-            }
-        }
-
-        function stopSystem(isAuto = false) {
-            state.isRunning = false;
-            state.referenceDescriptor = null;
-            cancelAnimationFrame(state.animId);
-            stopAlarm();
-            clearInterval(state.integrityCheckInterval);
-            
-            ctx.clearRect(0,0,canvas.width,canvas.height);
-            updateUI(false);
-
-            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
-            const reason = isAuto ? "時間到" : "手動終止";
-            logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
-            
-            if(sessionId) {
-                database.ref('sessions/' + sessionId + '/status').set('terminated');
-                database.ref('sessions/' + sessionId + '/end_time').set(new Date().toISOString());
-            }
-        }
-
-        function updateUI(active) {
-            document.getElementById('btn-start').disabled = active;
-            document.getElementById('btn-stop').disabled = !active;
-            document.getElementById('btn-toilet').disabled = !active;
-            document.getElementById('btn-settings').disabled = active;
-            document.getElementById('led-status').className = active ? "led scan" : "led";
-            document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE (生物鎖定中)" : "TERMINATED (已終止)";
-            if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
-            timeoutBar.style.width = active ? "100%" : "0%";
-        }
-
-        // --- MAIN LOOP ---
-        async function loop() {
-            if (!state.isRunning) return;
-            if (state.isToilet) { state.animId = requestAnimationFrame(loop); return; }
-
-            const now = Date.now();
-            const timeLeft = state.sessionEndTime - now;
-            updateTimer(timeLeft);
-
-            if (timeLeft <= 0) {
-                stopSystem(true); 
-                alert("Time's Up!");
-                return;
-            }
-
-            if (now - state.lastProcessTime > PROCESS_INTERVAL) {
-                state.lastProcessTime = now;
-                state.currentMotionScore = calculateMotion();
+                clearInterval(timer);
+                regCount.innerText = "LOCKING...";
                 
-                // Safe handling of faceapi results
-                try {
-                    const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
-                    state.currentDetections = detections;
-
-                    let targetFound = false;
-                    if(state.referenceDescriptor) {
-                        state.currentDetections.forEach(det => {
-                            const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                            det.isMatch = (distance < config.matchThreshold);
-                            if (det.isMatch) targetFound = true;
-                        });
-                    }
-                    state.isTargetPresent = targetFound;
-                    checkStatus(state.isTargetPresent, state.currentMotionScore, now);
-                } catch (e) {
-                    console.error("Detection Loop Error", e);
+                const detection = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                
+                if (detection) {
+                    state.referenceDescriptor = detection.descriptor;
+                    regOverlay.style.display = 'none';
+                    startSystem();
+                } else {
+                    alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
+                    regOverlay.style.display = 'none';
+                    setTimeout(() => location.reload(), 2000); 
                 }
             }
+        }, 1000);
+    }
 
-            ctx.clearRect(0,0,canvas.width,canvas.height);
+    // --- SYSTEM CONTROL ---
+    function startSystem() {
+        state.isRunning = true;
+        state.hasViolated = false;
+        state.lastLiveTimestamp = Date.now(); // 立即初始化時間戳，防止開場即誤報
+        state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+        
+        updateUI(true);
+        
+        if(sessionId) {
+            database.ref('sessions/' + sessionId).set({
+                start_time: new Date().toISOString(),
+                status: 'active',
+                config: {
+                    sessionMinutes: config.sessionMinutes,
+                    toiletDuration: config.toiletDuration,
+                    maxToiletVisits: config.maxToiletVisits
+                }
+            }).then(() => {
+                console.log("Session state initialized in Firebase");
+                startIntegrityCheck();
+                loop();
+            }).catch(error => {
+                console.error("Failed to initialize session in Firebase:", error);
+                alert("無法連接到安全伺服器，但將繼續以離線模式運行");
+                startIntegrityCheck(); // 即使 Firebase 失敗也繼續運行，防止因網路阻塞而無法開始
+                loop();
+            });
+            return; 
+        }
+        
+        startIntegrityCheck();
+        loop();
+    }
+
+    async function attemptStopSystem() {
+        if (!navigator.onLine) {
+            alert("需要網路連線進行驗證");
+            return;
+        }
+        const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+        if(pass === null) return; 
+
+        if (pass === adminPassword) {
+            stopSystem(false);
+        } else {
+            alert("密碼錯誤 (Invalid Password)");
+        }
+    }
+
+    function stopSystem(isAuto = false) {
+        state.isRunning = false;
+        state.referenceDescriptor = null;
+        cancelAnimationFrame(state.animId);
+        stopAlarm();
+        clearInterval(state.integrityCheckInterval);
+        
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        updateUI(false);
+
+        const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+        const reason = isAuto ? "時間到" : "手動終止";
+        logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
+        
+        if(sessionId) {
+            database.ref('sessions/' + sessionId + '/status').set('terminated');
+            database.ref('sessions/' + sessionId + '/end_time').set(new Date().toISOString());
+        }
+    }
+
+    function updateUI(active) {
+        document.getElementById('btn-start').disabled = active;
+        document.getElementById('btn-stop').disabled = !active;
+        document.getElementById('btn-toilet').disabled = !active;
+        document.getElementById('btn-settings').disabled = active;
+        document.getElementById('led-status').className = active ? "led scan" : "led";
+        document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE (生物鎖定中)" : "TERMINATED (已終止)";
+        if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
+        timeoutBar.style.width = active ? "100%" : "0%";
+    }
+
+    // --- MAIN LOOP ---
+    async function loop() {
+        if (!state.isRunning) return;
+        if (state.isToilet) { state.animId = requestAnimationFrame(loop); return; }
+
+        const now = Date.now();
+        const timeLeft = state.sessionEndTime - now;
+        updateTimer(timeLeft);
+
+        if (timeLeft <= 0) {
+            stopSystem(true); // 時間到，自動正常結束
+            alert("Time's Up!");
+            return;
+        }
+
+        if (now - state.lastProcessTime > PROCESS_INTERVAL) {
+            state.lastProcessTime = now;
+            state.currentMotionScore = calculateMotion();
+            
+            const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+            state.currentDetections = detections;
+
+            let targetFound = false;
             state.currentDetections.forEach(det => {
-                const box = det.detection.box;
-                const drawBox = new faceapi.draw.DrawBox(box, { 
-                    label: det.isMatch ? "TARGET" : "UNKNOWN",
-                    boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
-                    lineWidth: 2
-                });
-                drawBox.draw(canvas);
+                const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                det.isMatch = (distance < config.matchThreshold);
+                if (det.isMatch) targetFound = true;
             });
 
-            updateTimeoutBar(now);
-            state.animId = requestAnimationFrame(loop);
+            state.isTargetPresent = targetFound;
+            checkStatus(state.isTargetPresent, state.currentMotionScore, now);
         }
 
-        function checkStatus(targetPresent, motionScore, now) {
-            if (targetPresent && motionScore > config.motionThreshold) {
-                state.lastLiveTimestamp = now;
-                stopAlarm(); 
-                viewport.classList.add('verified');
-                document.getElementById('text-status').innerText = "VERIFIED: TARGET LOCKED";
-            } else {
-                viewport.classList.remove('verified');
-            }
-        }
-
-        function updateTimeoutBar(now) {
-            const elapsed = now - state.lastLiveTimestamp;
-            const barPct = Math.max(0, (config.timeoutMs - elapsed) / config.timeoutMs) * 100;
-            timeoutBar.style.width = barPct + "%";
-            timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
-
-            if (elapsed > config.timeoutMs) {
-                let reason = "";
-                if (!state.isTargetPresent) reason = "目標離開偵測範圍";
-                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
-
-                if (reason) {
-                    triggerAlarm(` ${reason}`); 
-                }
-            }
-        }
-
-        // --- ALARM & LOGGING ---
-        function triggerAlarm(msg) {
-            document.getElementById('text-status').innerText = "⚠ " + msg;
-            viewport.classList.add('alert');
-            document.getElementById('led-status').className = "led err";
-            
-            if (state.lastAlarmType !== msg) {
-                logToCloud("ALERT", msg, true); 
-                state.lastAlarmType = msg;
-                state.hasViolated = true;
-            }
-            if(alarmAudio.paused) { alarmAudio.currentTime = 0; alarmAudio.play().catch(()=>{}); }
-            
-            if (navigator.vibrate) navigator.vibrate([1000, 500, 1000]);
-        }
-
-        function stopAlarm() {
-            if(!alarmAudio.paused) alarmAudio.pause();
-            state.lastAlarmType = null;
-            viewport.classList.remove('alert');
-            document.getElementById('led-status').className = "led scan";
-        }
-
-        function logToCloud(category, msg, saveToDb = false) {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
-
-            if (saveToDb) {
-                const div = document.createElement('div');
-                div.className = "log-entry";
-                
-                const timeSpan = document.createElement('span');
-                timeSpan.style.color = "#666";
-                timeSpan.textContent = `[${timeStr}] `;
-                
-                const msgNode = document.createTextNode(`${category}: ${msg}`);
-                
-                div.appendChild(timeSpan);
-                div.appendChild(msgNode);
-                logDisplay.appendChild(div);
-                logDisplay.scrollTop = logDisplay.scrollHeight;
-
-                const safeMsg = sanitizeInput(msg);
-                const safeCategory = sanitizeInput(category);
-
-                if(sessionId) {
-                    database.ref('sessions/' + sessionId + '/logs').push({
-                        time: timeStr,
-                        type: safeCategory,
-                        details: safeMsg
-                    });
-                }
-            }
-        }
-
-        // --- ANTI-TAMPER ---
-        function startIntegrityCheck() {
-            state.integrityCheckInterval = setInterval(async () => {
-                if (!state.isRunning || state.isToilet) return;
-                
-                try {
-                    const snapshot = await database.ref('sessions/' + sessionId).once('value');
-                    if (snapshot.exists() && snapshot.val().status === 'terminated') {
-                        console.warn("Session terminated remotely.");
-                        logToCloud("SEVERE", "Session 被遠端終止", true);
-                        stopSystem(false);
-                    }
-                } catch (error) {
-                    console.warn("Firebase validation failed (Network glitch):", error);
-                }
-            }, 10000); 
-        }
-
-        document.addEventListener("visibilitychange", () => {
-            if (state.isRunning && !state.isToilet && document.hidden) {
-                logToCloud("SEVERE", "分頁切換", true);
-                triggerAlarm("分頁切換");
-                state.hasViolated = true;
-            }
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        state.currentDetections.forEach(det => {
+            const box = det.detection.box;
+            const drawBox = new faceapi.draw.DrawBox(box, { 
+                label: det.isMatch ? "TARGET" : "UNKNOWN",
+                boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
+                lineWidth: 2
+            });
+            drawBox.draw(canvas);
         });
 
-        // --- HELPERS ---
-        function calculateMotion() {
-            diffCtx.drawImage(video, 0, 0, 64, 48);
-            const data = diffCtx.getImageData(0,0,64,48).data;
-            if(!state.prevFrameData) { state.prevFrameData = data; return 100; }
-            
-            let diffPixels = 0;
-            const totalPixels = data.length / 4;
-            for(let i=0; i<data.length; i+=4) {
-                if(Math.abs(data[i+1] - state.prevFrameData[i+1]) > 5) diffPixels++;
-            }
-            state.prevFrameData = data;
-            return (diffPixels / totalPixels) * 100;
-        }
+        updateTimeoutBar(now);
+        state.animId = requestAnimationFrame(loop);
+    }
 
-        function updateTimer(ms) {
-            if(ms < 0) ms = 0;
-            const m = Math.floor(ms / 60000);
-            const s = Math.floor((ms % 60000) / 1000);
-            const el = document.getElementById('session-timer-display');
-            el.innerText = `${m}:${s.toString().padStart(2,'0')}`;
-            if(m < 5) el.style.color = "var(--secondary-color)";
+    function checkStatus(targetPresent, motionScore, now) {
+        if (targetPresent && motionScore > config.motionThreshold) {
+            state.lastLiveTimestamp = now;
+            stopAlarm(); // 目標回來，停止警報
+            viewport.classList.add('verified');
+            document.getElementById('text-status').innerText = "VERIFIED: TARGET LOCKED";
+        } else {
+            viewport.classList.remove('verified');
+            // 注意：這裡不主動觸發警報，交由 updateTimeoutBar 判斷時間是否超過 5 秒
         }
+    }
 
-        // --- SETTINGS ---
-        function attemptToggleSettings() {
-            if (state.isRunning) return; 
-            toggleSettings();
-        }
+    function updateTimeoutBar(now) {
+        const elapsed = now - state.lastLiveTimestamp;
+        const barPct = Math.max(0, (config.timeoutMs - elapsed) / config.timeoutMs) * 100;
+        timeoutBar.style.width = barPct + "%";
+        timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
 
-        function toggleSettings() {
-            const panel = document.getElementById('settings-panel');
-            panel.classList.toggle('open');
-        }
+        // --- 核心修正：超時僅觸發警報，絕不停止系統 ---
+        if (elapsed > config.timeoutMs) {
+            let reason = "";
+            if (!state.isTargetPresent) reason = "目標離開偵測範圍";
+            else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
 
-        function updateConfig() {
-            config.sessionMinutes = parseInt(document.getElementById('cfg-duration').value) || 30;
-            config.toiletDuration = parseInt(document.getElementById('cfg-toilet-dur').value) || 5;
-            config.maxToiletVisits = parseInt(document.getElementById('cfg-toilet-max').value) || 1;
-            
-            if(state.isRunning) {
-                state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+            if (reason) {
+                triggerAlarm(` ${reason}`); // 僅觸發警報
+                // 不呼叫 stopSystem()
             }
         }
+    }
 
-        // --- TOILET MODE ---
-        let tInt = null;
-        function requestToilet() {
-            if(state.toiletVisits >= config.maxToiletVisits) { alert("Max Limit Reached / 已達次數上限"); return; }
-            if(!confirm("Start Toilet Break? Timer will start. / 確定開始如廁計時？")) return;
+    // --- ALARM & LOGGING ---
+    function triggerAlarm(msg) {
+        document.getElementById('text-status').innerText = "⚠ " + msg;
+        viewport.classList.add('alert');
+        document.getElementById('led-status').className = "led err";
+        
+        if (state.lastAlarmType !== msg) {
+            logToCloud("ALERT", msg, true); 
+            state.lastAlarmType = msg;
+            state.hasViolated = true;
+        }
+        if(alarmAudio.paused) { alarmAudio.currentTime = 0; alarmAudio.play().catch(()=>{}); }
+        
+        if (navigator.vibrate) navigator.vibrate([1000, 500, 1000]);
+    }
 
-            state.isToilet = true;
-            state.toiletVisits++;
-            document.getElementById('toilet-count').innerText = state.toiletVisits;
-            stopAlarm();
+    function stopAlarm() {
+        if(!alarmAudio.paused) alarmAudio.pause();
+        state.lastAlarmType = null;
+        viewport.classList.remove('alert');
+        document.getElementById('led-status').className = "led scan";
+    }
+
+    function logToCloud(category, msg, saveToDb = false) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
+
+        if (saveToDb) {
+            const div = document.createElement('div');
+            div.className = "log-entry";
             
-            const toiletScreen = document.getElementById('toilet-screen');
-            const toiletTimer = document.getElementById('toilet-timer');
-            toiletScreen.style.display = 'flex';
+            const timeSpan = document.createElement('span');
+            timeSpan.style.color = "#666";
+            timeSpan.textContent = `[${timeStr}] `;
             
-            let t = config.toiletDuration * 60;
-            const updateT = (s) => toiletTimer.innerText = `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
-            updateT(t);
+            const msgNode = document.createTextNode(`${category}: ${msg}`);
             
-            tInt = setInterval(()=>{
-                t--; updateT(t);
-                if(t<=0) {
-                    clearInterval(tInt);
-                    toiletScreen.style.display = 'none';
-                    state.isToilet = false;
-                    state.lastLiveTimestamp = Date.now();
-                    logToCloud("VIOLATION", "如廁超時", true);
-                    triggerAlarm("如廁超時");
-                    state.hasViolated = true;
+            div.appendChild(timeSpan);
+            div.appendChild(msgNode);
+            logDisplay.appendChild(div);
+            logDisplay.scrollTop = logDisplay.scrollHeight;
+
+            const safeMsg = sanitizeInput(msg);
+            const safeCategory = sanitizeInput(category);
+
+            if(sessionId) {
+                database.ref('sessions/' + sessionId + '/logs').push({
+                    time: timeStr,
+                    type: safeCategory,
+                    details: safeMsg
+                });
+            }
+        }
+    }
+
+    // --- ANTI-TAMPER ---
+    function startIntegrityCheck() {
+        // 每 10 秒檢查一次 (放寬頻率減少網路負載)
+        state.integrityCheckInterval = setInterval(async () => {
+            if (!state.isRunning || state.isToilet) return;
+            
+            try {
+                const snapshot = await database.ref('sessions/' + sessionId).once('value');
+                // 只有當 Firebase 明確記錄狀態為 'terminated' 時才遠端停止
+                if (snapshot.exists() && snapshot.val().status === 'terminated') {
+                    console.warn("Session terminated remotely.");
+                    logToCloud("SEVERE", "Session 被遠端終止", true);
+                    stopSystem(false);
                 }
-            }, 1000);
+            } catch (error) {
+                // --- 核心修正：網路錯誤時不停止系統，僅記錄警告 ---
+                console.warn("Firebase validation failed (Network glitch):", error);
+                // 這裡移除 stopSystem，防止網路波動導致「未滿5秒自動終止」的錯覺
+            }
+        }, 10000); 
+    }
 
-            document.getElementById('btn-return-early').onclick = () => {
+    document.addEventListener("visibilitychange", () => {
+        if (state.isRunning && !state.isToilet && document.hidden) {
+            logToCloud("SEVERE", "分頁切換", true);
+            triggerAlarm("分頁切換");
+            state.hasViolated = true;
+            // 分頁切換僅觸發警報，不停止系統
+        }
+    });
+
+    // --- HELPERS ---
+    function calculateMotion() {
+        diffCtx.drawImage(video, 0, 0, 64, 48);
+        const data = diffCtx.getImageData(0,0,64,48).data;
+        if(!state.prevFrameData) { state.prevFrameData = data; return 100; }
+        
+        let diffPixels = 0;
+        const totalPixels = data.length / 4;
+        for(let i=0; i<data.length; i+=4) {
+            if(Math.abs(data[i+1] - state.prevFrameData[i+1]) > 5) diffPixels++;
+        }
+        state.prevFrameData = data;
+        return (diffPixels / totalPixels) * 100;
+    }
+
+    function updateTimer(ms) {
+        if(ms < 0) ms = 0;
+        const m = Math.floor(ms / 60000);
+        const s = Math.floor((ms % 60000) / 1000);
+        const el = document.getElementById('session-timer-display');
+        el.innerText = `${m}:${s.toString().padStart(2,'0')}`;
+        if(m < 5) el.style.color = "var(--secondary-color)";
+    }
+
+    // --- SETTINGS ---
+    function attemptToggleSettings() {
+        if (!navigator.onLine) {
+            alert("需要網路連線進行驗證");
+            return;
+        }
+        if (state.isRunning) return; // 運行中不可開啟
+        toggleSettings();
+    }
+
+    function toggleSettings() {
+        const panel = document.getElementById('settings-panel');
+        panel.classList.toggle('open');
+    }
+
+    function updateConfig() {
+        config.sessionMinutes = parseInt(document.getElementById('cfg-duration').value) || 30;
+        config.toiletDuration = parseInt(document.getElementById('cfg-toilet-dur').value) || 5;
+        config.maxToiletVisits = parseInt(document.getElementById('cfg-toilet-max').value) || 1;
+        
+        if(state.isRunning) {
+            state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+        }
+    }
+
+    // --- TOILET MODE ---
+    let tInt = null;
+    function requestToilet() {
+        if(state.toiletVisits >= config.maxToiletVisits) { alert("Max Limit Reached / 已達次數上限"); return; }
+        if(!confirm("Start Toilet Break? Timer will start. / 確定開始如廁計時？")) return;
+
+        state.isToilet = true;
+        state.toiletVisits++;
+        document.getElementById('toilet-count').innerText = state.toiletVisits;
+        stopAlarm();
+        
+        const toiletScreen = document.getElementById('toilet-screen');
+        const toiletTimer = document.getElementById('toilet-timer');
+        toiletScreen.style.display = 'flex';
+        
+        let t = config.toiletDuration * 60;
+        const updateT = (s) => toiletTimer.innerText = `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
+        updateT(t);
+        
+        tInt = setInterval(()=>{
+            t--; updateT(t);
+            if(t<=0) {
                 clearInterval(tInt);
                 toiletScreen.style.display = 'none';
                 state.isToilet = false;
                 state.lastLiveTimestamp = Date.now();
-                loop();
-            };
-        }
+                logToCloud("VIOLATION", "如廁超時", true);
+                triggerAlarm("如廁超時");
+                state.hasViolated = true;
+            }
+        }, 1000);
 
-        window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
+        document.getElementById('btn-return-early').onclick = () => {
+            clearInterval(tInt);
+            toiletScreen.style.display = 'none';
+            state.isToilet = false;
+            state.lastLiveTimestamp = Date.now();
+            loop();
+        };
+    }
 
-    </script>
+    window.addEventListener('beforeunload', (e)=>{ if(state.isRunning){ e.preventDefault(); e.returnValue=''; } });
+
+</script>
+
 </body>
-    </html>
+</html>
