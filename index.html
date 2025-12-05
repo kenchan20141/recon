@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
     <!-- SECURITY: Content Security Policy (CSP) -->
-    <!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源 -->
+    <!-- XSS DEFENSE LAYER 1 -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
 
     <title>AI RECON - Secure Monitor</title>
@@ -344,7 +344,9 @@
 
         let sessionId = ""; 
         let consentGiven = false;
-        let adminPassword = "";
+        
+        // ★★★ HARDCODED PASSWORD FOR STABILITY ★★★
+        const ADMIN_PASSWORD = "ckkchi"; 
 
         // --- SECURITY: XSS PREVENTION ---
         const sanitizeInput = (str) => {
@@ -361,22 +363,6 @@
             const pad = n => n.toString().padStart(2, '0');
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
-
-        // --- FETCH ADMIN PASSWORD ---
-        function fetchAdminPassword() {
-            database.ref('admin/password').once('value')
-                .then((snapshot) => {
-                    if (snapshot.exists()) {
-                        adminPassword = snapshot.val();
-                        console.log("Admin config loaded.");
-                    } else {
-                        console.warn("No admin password found in DB.");
-                    }
-                })
-                .catch((error) => {
-                    console.error("Firebase Read Error:", error);
-                });
-        }
 
         // --- MODAL LOGIC ---
         function acceptConsent() {
@@ -401,6 +387,8 @@
 
                 modal.classList.add('active');
                 
+                setTimeout(() => inputEl.focus(), 100);
+
                 const close = (val) => {
                     modal.classList.remove('active');
                     confirmBtn.onclick = null;
@@ -467,8 +455,6 @@
 
         // --- INIT & FACE API ---
         async function init() {
-            fetchAdminPassword();
-
             try {
                 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
                 await Promise.all([
@@ -541,7 +527,7 @@
                     } else {
                         alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
                         regOverlay.style.display = 'none';
-                        setTimeout(() => location.reload(), 2000); 
+                        document.getElementById('btn-start').disabled = false;
                     }
                 }
             }, 1000);
@@ -551,12 +537,17 @@
         function startSystem() {
             state.isRunning = true;
             state.hasViolated = false;
-            state.lastLiveTimestamp = Date.now(); // 立即初始化時間戳，防止開場即誤報
+            state.lastLiveTimestamp = Date.now();
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             
             updateUI(true);
             
+            // ★★★ KEY FIX: Start loop immediately (Optimistic UI) ★★★
+            startIntegrityCheck();
+            loop(); 
+            
             if(sessionId) {
+                // Perform Firebase write in background
                 database.ref('sessions/' + sessionId).set({
                     start_time: new Date().toISOString(),
                     status: 'active',
@@ -567,30 +558,21 @@
                     }
                 }).then(() => {
                     console.log("Session state initialized in Firebase");
-                    startIntegrityCheck();
-                    loop();
                 }).catch(error => {
-                    console.error("Failed to initialize session in Firebase:", error);
-                    alert("無法連接到安全伺服器，但將繼續以離線模式運行");
-                    startIntegrityCheck(); // 即使 Firebase 失敗也繼續運行，防止因網路阻塞而無法開始
-                    loop();
+                    console.error("Firebase write failed (Offline mode active):", error);
+                    document.getElementById('firebase-status').innerText = "Offline Mode";
                 });
-                return; 
             }
-            
-            startIntegrityCheck();
-            loop();
         }
 
+        // ★★★ MODIFIED: STOP SYSTEM (OFFLINE-CAPABLE) ★★★
         async function attemptStopSystem() {
-            if (!navigator.onLine) {
-                alert("需要網路連線進行驗證");
-                return;
-            }
-            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; 
+            // We no longer require navigator.onLine check for password logic
+            const passInput = await showInputPrompt("請輸入密碼以終止監控", true);
+            if(passInput === null) return; 
 
-            if (pass === adminPassword) {
+            // Direct comparison with hardcoded password - 100% Reliable
+            if (passInput === ADMIN_PASSWORD) {
                 stopSystem(false);
             } else {
                 alert("密碼錯誤 (Invalid Password)");
@@ -679,12 +661,11 @@
         function checkStatus(targetPresent, motionScore, now) {
             if (targetPresent && motionScore > config.motionThreshold) {
                 state.lastLiveTimestamp = now;
-                stopAlarm(); // 目標回來，停止警報
+                stopAlarm(); 
                 viewport.classList.add('verified');
                 document.getElementById('text-status').innerText = "VERIFIED: TARGET LOCKED";
             } else {
                 viewport.classList.remove('verified');
-                // 注意：這裡不主動觸發警報，交由 updateTimeoutBar 判斷時間是否超過 5 秒
             }
         }
 
@@ -694,15 +675,13 @@
             timeoutBar.style.width = barPct + "%";
             timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
 
-            // --- 核心修正：超時僅觸發警報，絕不停止系統 ---
             if (elapsed > config.timeoutMs) {
                 let reason = "";
                 if (!state.isTargetPresent) reason = "目標離開偵測範圍";
                 else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
 
                 if (reason) {
-                    triggerAlarm(` ${reason}`); // 僅觸發警報
-                    // 不呼叫 stopSystem()
+                    triggerAlarm(` ${reason}`); 
                 }
             }
         }
@@ -764,22 +743,18 @@
 
         // --- ANTI-TAMPER ---
         function startIntegrityCheck() {
-            // 每 10 秒檢查一次 (放寬頻率減少網路負載)
             state.integrityCheckInterval = setInterval(async () => {
                 if (!state.isRunning || state.isToilet) return;
                 
                 try {
                     const snapshot = await database.ref('sessions/' + sessionId).once('value');
-                    // 只有當 Firebase 明確記錄狀態為 'terminated' 時才遠端停止
                     if (snapshot.exists() && snapshot.val().status === 'terminated') {
                         console.warn("Session terminated remotely.");
                         logToCloud("SEVERE", "Session 被遠端終止", true);
                         stopSystem(false);
                     }
                 } catch (error) {
-                    // --- 核心修正：網路錯誤時不停止系統，僅記錄警告 ---
                     console.warn("Firebase validation failed (Network glitch):", error);
-                    // 這裡移除 stopSystem，防止網路波動導致「未滿5秒自動終止」的錯覺
                 }
             }, 10000); 
         }
@@ -789,7 +764,6 @@
                 logToCloud("SEVERE", "分頁切換", true);
                 triggerAlarm("分頁切換");
                 state.hasViolated = true;
-                // 分頁切換僅觸發警報，不停止系統
             }
         });
 
@@ -819,11 +793,14 @@
 
         // --- SETTINGS ---
         function attemptToggleSettings() {
+            // Settings still require explicit action, but we can relax the network check 
+            // if you want settings to be accessible offline. For now, kept as is to prevent student tampering.
             if (!navigator.onLine) {
+                // Optional: remove this check if you want offline settings access
                 alert("需要網路連線進行驗證");
                 return;
             }
-            if (state.isRunning) return; // 運行中不可開啟
+            if (state.isRunning) return; 
             toggleSettings();
         }
 
@@ -887,4 +864,4 @@
 
     </script>
 </body>
-</html>
+                </html>
