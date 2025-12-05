@@ -763,18 +763,30 @@ function checkStatus(targetPresent, motionScore, now) {
         }
 
         // --- ALARM & LOGGING (XSS SAFE) ---
-        function triggerAlarm(msg) {
-            document.getElementById('text-status').innerText = "⚠ " + msg;
-            viewport.classList.add('alert');
-            document.getElementById('led-status').className = "led err";
-            
-            if (state.lastAlarmType !== msg) {
-                logToCloud("ALERT", msg, true); 
-                state.lastAlarmType = msg;
-                state.hasViolated = true;
-            }
-            if(alarmAudio.paused) { alarmAudio.currentTime = 0; alarmAudio.play().catch(()=>{}); }
-        }
+       function triggerAlarm(msg) {
+    document.getElementById('text-status').innerText = "⚠ " + msg;
+    viewport.classList.add('alert');
+    document.getElementById('led-status').className = "led err";
+    
+    if (state.lastAlarmType !== msg) {
+        logToCloud("ALERT", msg, true); 
+        state.lastAlarmType = msg;
+        state.hasViolated = true;
+    }
+    if(alarmAudio.paused) { alarmAudio.currentTime = 0; alarmAudio.play().catch(()=>{}); }
+    
+    // --- ADD VIBRATION ---
+    // 檢查瀏覽器是否支援震動 API
+    if (navigator.vibrate) {
+        // 震動模式：震動1秒，停0.5秒，再震動1秒
+        // 陣列中的數字代表毫秒
+        navigator.vibrate([1000, 500, 1000]);
+    } else {
+        // 如果瀏覽器不支援，可以選擇性地記錄或忽略
+        console.log("Vibration API not supported by this browser.");
+    }
+    // --- END VIBRATION ---
+}
 
         function stopAlarm() {
             if(!alarmAudio.paused) alarmAudio.pause();
