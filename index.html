@@ -620,7 +620,7 @@
             ctx.clearRect(0,0,canvas.width,canvas.height);
             updateUI(false);
 
-            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 (無違規)";
+            const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 - 無違規";
             const reason = isAuto ? "時間到" : "手動終止";
             logToCloud("CONCLUSION", `${conclusion} (${reason})`, true);
             
