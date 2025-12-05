@@ -260,14 +260,11 @@
                 <p>LOOK AT CAMERA</p>
                 <div id="reg-countdown" style="font-size:3rem; font-weight:bold;">3</div>
             </div>
-            
             <video id="webcam" autoplay playsinline muted></video>
             <canvas id="canvas"></canvas>
-            
             <div class="time-bar-container">
                 <div id="timeout-bar" class="time-bar"></div>
             </div>
-
             <div id="toilet-screen">
                 <h2 style="color:var(--warning-color)">RESTROOM BREAK</h2>
                 <div id="toilet-timer">00:00</div>
@@ -280,7 +277,7 @@
                 <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
                 <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
-                <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
+               <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
             </div>
 
             <div class="settings-panel" id="settings-panel">
@@ -314,7 +311,8 @@
     <div id="input-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-title" id="modal-msg">SESSION ID</div>
-            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off" enterkeyhint="done">
+            <!-- Modified input to prevent auto keyboard -->
+            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off">
             <div class="modal-btns">
                 <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
                 <button id="modal-confirm-btn">CONFIRM</button>
@@ -345,9 +343,9 @@
         let sessionId = ""; 
         let consentGiven = false;
         
-        // --- 核心修正：硬編碼密碼 (Hardcoded Password) ---
-        // 解決網路不穩導致密碼驗證失敗的問題
-        const adminPassword = "ckkchi"; 
+        // --- MODIFICATION: HARDCODED PASSWORD ---
+        // 原代碼透過 fetchAdminPassword 從 DB 獲取，現改為硬編碼
+        let adminPassword = "ckkchi"; 
 
         // --- SECURITY: XSS PREVENTION ---
         const sanitizeInput = (str) => {
@@ -364,6 +362,25 @@
             const pad = n => n.toString().padStart(2, '0');
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
+
+        // --- FETCH ADMIN PASSWORD ---
+        // 註解掉此函式以停用從 Firebase 獲取密碼的功能，確保硬編碼生效
+        /*
+        function fetchAdminPassword() {
+            database.ref('admin/password').once('value')
+                .then((snapshot) => {
+                    if (snapshot.exists()) {
+                        adminPassword = snapshot.val();
+                        console.log("Admin config loaded.");
+                    } else {
+                        console.warn("No admin password found in DB.");
+                    }
+                })
+                .catch((error) => {
+                    console.error("Firebase Read Error:", error);
+                });
+        }
+        */
 
         // --- MODAL LOGIC ---
         function acceptConsent() {
@@ -385,16 +402,23 @@
                 inputEl.value = '';
                 inputEl.type = isPassword ? 'password' : 'text'; 
                 inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
-                // 修正：不設置 inputEl.focus() 以防止手機鍵盤自動彈出
+
+                // --- MODIFICATION: PREVENT AUTO KEYBOARD ---
+                // 先設為 readonly，防止瀏覽器或手機自動彈出鍵盤
+                inputEl.setAttribute('readonly', 'readonly');
+                // 只有當使用者點擊輸入框時，才移除 readonly 允許輸入
+                inputEl.onclick = () => {
+                    inputEl.removeAttribute('readonly');
+                };
 
                 modal.classList.add('active');
                 
                 const close = (val) => {
                     modal.classList.remove('active');
-                    inputEl.blur(); // 確保關閉時鍵盤收起
                     confirmBtn.onclick = null;
                     cancelBtn.onclick = null;
                     inputEl.onkeydown = null;
+                    inputEl.onclick = null; // 清除事件監聽
                     resolve(val);
                 };
 
@@ -456,6 +480,8 @@
 
         // --- INIT & FACE API ---
         async function init() {
+            // fetchAdminPassword(); // 移除調用
+
             try {
                 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
                 await Promise.all([
@@ -476,7 +502,7 @@
                     state.isAiReady = true;
                     document.getElementById('loading-msg').style.display = 'none';
                     if(consentGiven) document.getElementById('btn-start').disabled = false;
-                    document.getElementById('firebase-status').innerText = "System Ready (Secured)";
+                    document.getElementById('firebase-status').innerText = "System Ready";
                 };
 
             } catch (e) {
@@ -493,7 +519,7 @@
         async function attemptStart() {
             if(!consentGiven) return;
 
-            const inputName = await showInputPrompt("YOUR NAME");
+           const inputName = await showInputPrompt("YOUR NAME");
             if (inputName && inputName.trim() !== "") {
                 sessionId = sanitizeInput(inputName.trim());
             } else {
@@ -538,18 +564,11 @@
         function startSystem() {
             state.isRunning = true;
             state.hasViolated = false;
-            state.lastLiveTimestamp = Date.now();
+            state.lastLiveTimestamp = Date.now(); // 立即初始化時間戳，防止開場即誤報
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             
             updateUI(true);
             
-            // --- 核心修正：解除網絡阻塞 ---
-            // 立即啟動 AI 迴圈，不等待 Firebase 回應
-            startIntegrityCheck();
-            loop(); 
-            console.log("System loop started locally.");
-
-            // Firebase 記錄在背景處理
             if(sessionId) {
                 database.ref('sessions/' + sessionId).set({
                     start_time: new Date().toISOString(),
@@ -560,15 +579,27 @@
                         maxToiletVisits: config.maxToiletVisits
                     }
                 }).then(() => {
-                    console.log("Firebase sync established.");
+                    console.log("Session state initialized in Firebase");
+                    startIntegrityCheck();
+                    loop();
                 }).catch(error => {
-                    console.warn("Firebase sync delayed (Running offline mode):", error);
+                    console.error("Failed to initialize session in Firebase:", error);
+                    alert("無法連接到安全伺服器，但將繼續以離線模式運行");
+                    startIntegrityCheck(); // 即使 Firebase 失敗也繼續運行，防止因網路阻塞而無法開始
+                    loop();
                 });
+                return; 
             }
+            
+            startIntegrityCheck();
+            loop();
         }
 
         async function attemptStopSystem() {
-            // 已硬編碼密碼，無需網絡驗證
+            if (!navigator.onLine) {
+                alert("需要網路連線進行驗證");
+                return;
+            }
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
             if(pass === null) return; 
 
@@ -666,7 +697,7 @@
                 document.getElementById('text-status').innerText = "VERIFIED: TARGET LOCKED";
             } else {
                 viewport.classList.remove('verified');
-                // 注意：這裡不主動觸發警報，交由 updateTimeoutBar 判斷時間是否超過設定
+                // 注意：這裡不主動觸發警報，交由 updateTimeoutBar 判斷時間是否超過 5 秒
             }
         }
 
@@ -676,13 +707,15 @@
             timeoutBar.style.width = barPct + "%";
             timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
 
+            // --- 核心修正：超時僅觸發警報，絕不停止系統 ---
             if (elapsed > config.timeoutMs) {
                 let reason = "";
                 if (!state.isTargetPresent) reason = "目標離開偵測範圍";
                 else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
 
                 if (reason) {
-                    triggerAlarm(` ${reason}`); 
+                    triggerAlarm(` ${reason}`); // 僅觸發警報
+                    // 不呼叫 stopSystem()
                 }
             }
         }
@@ -744,18 +777,22 @@
 
         // --- ANTI-TAMPER ---
         function startIntegrityCheck() {
+            // 每 10 秒檢查一次 (放寬頻率減少網路負載)
             state.integrityCheckInterval = setInterval(async () => {
                 if (!state.isRunning || state.isToilet) return;
                 
                 try {
                     const snapshot = await database.ref('sessions/' + sessionId).once('value');
+                    // 只有當 Firebase 明確記錄狀態為 'terminated' 時才遠端停止
                     if (snapshot.exists() && snapshot.val().status === 'terminated') {
                         console.warn("Session terminated remotely.");
                         logToCloud("SEVERE", "Session 被遠端終止", true);
                         stopSystem(false);
                     }
                 } catch (error) {
-                    console.warn("Firebase validation skipped (Network issue)");
+                    // --- 核心修正：網路錯誤時不停止系統，僅記錄警告 ---
+                    console.warn("Firebase validation failed (Network glitch):", error);
+                    // 這裡移除 stopSystem，防止網路波動導致「未滿5秒自動終止」的錯覺
                 }
             }, 10000); 
         }
@@ -765,6 +802,7 @@
                 logToCloud("SEVERE", "分頁切換", true);
                 triggerAlarm("分頁切換");
                 state.hasViolated = true;
+                // 分頁切換僅觸發警報，不停止系統
             }
         });
 
@@ -794,7 +832,11 @@
 
         // --- SETTINGS ---
         function attemptToggleSettings() {
-            if (state.isRunning) return; 
+            if (!navigator.onLine) {
+                alert("需要網路連線進行驗證");
+                return;
+            }
+            if (state.isRunning) return; // 運行中不可開啟
             toggleSettings();
         }
 
@@ -858,4 +900,4 @@
 
     </script>
 </body>
-    </html>
+</html>
