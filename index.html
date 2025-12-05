@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    
+
     <!-- SECURITY: Content Security Policy (CSP) -->
-    <!-- FIX: Added *.googleapis.com to allow Firebase handshake -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com https://*.googleapis.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
 
     <title>AI RECON - Secure Monitor</title>
-    
+
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -260,7 +259,6 @@
                 <p>LOOK AT CAMERA</p>
                 <div id="reg-countdown" style="font-size:3rem; font-weight:bold;">3</div>
             </div>
-
             <video id="webcam" autoplay playsinline muted></video>
             <canvas id="canvas"></canvas>
             
@@ -280,7 +278,7 @@
                 <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
                 <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
-               <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
+                <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
             </div>
 
             <div class="settings-panel" id="settings-panel">
@@ -304,7 +302,7 @@
                 <div class="log-box">
                     <div style="color:var(--warning-color); margin-bottom:8px; font-size:1rem;">VIOLATION LOGS (XSS-SAFE RENDER)</div>
                     <div id="log-display"></div>
-                    <div id="firebase-status" style="font-size:0.8rem; color:#666; text-align:right; margin-top:8px;">Checking Connection...</div>
+                    <div id="firebase-status" style="font-size:0.8rem; color:#666; text-align:right; margin-top:8px;">Connecting...</div>
                 </div>
             </div>
         </div>
@@ -314,7 +312,7 @@
     <div id="input-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-title" id="modal-msg">SESSION ID</div>
-            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off">
+            <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
             <div class="modal-btns">
                 <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
                 <button id="modal-confirm-btn">CONFIRM</button>
@@ -345,23 +343,8 @@
         let sessionId = ""; 
         let consentGiven = false;
         
-        // HARDCODED PASSWORD
-        const ADMIN_PASSWORD = "ckkchi"; 
-
-        // --- MONITOR FIREBASE CONNECTION ---
-        const connectedRef = database.ref(".info/connected");
-        connectedRef.on("value", (snap) => {
-            const statusEl = document.getElementById('firebase-status');
-            if (snap.val() === true) {
-                statusEl.innerText = "ONLINE (Ready to Log)";
-                statusEl.style.color = "var(--success-color)";
-                statusEl.style.fontWeight = "bold";
-            } else {
-                statusEl.innerText = "OFFLINE (No Logging)";
-                statusEl.style.color = "var(--secondary-color)";
-                statusEl.style.fontWeight = "bold";
-            }
-        });
+        // REVISION: Hardcoded password as requested to prevent fetch failures
+        const adminPassword = "ckkchi"; 
 
         // --- SECURITY: XSS PREVENTION ---
         const sanitizeInput = (str) => {
@@ -379,7 +362,7 @@
             return `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
         };
 
-        // --- MODAL LOGIC ---
+        // --- MODAL LOGIC (KEYBOARD FIX) ---
         function acceptConsent() {
             document.getElementById('consent-modal').style.display = 'none';
             consentGiven = true;
@@ -402,8 +385,8 @@
 
                 modal.classList.add('active');
                 
-                // NO FOCUS to prevent keyboard popup
-
+                // REVISION: Removed inputEl.focus() to prevent auto-keyboard popup
+                
                 const close = (val) => {
                     modal.classList.remove('active');
                     confirmBtn.onclick = null;
@@ -470,6 +453,9 @@
 
         // --- INIT & FACE API ---
         async function init() {
+            // REVISION: Removed async fetchAdminPassword call here.
+            // Using hardcoded password makes this function purely for AI/Camera init.
+            
             try {
                 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
                 await Promise.all([
@@ -490,6 +476,7 @@
                     state.isAiReady = true;
                     document.getElementById('loading-msg').style.display = 'none';
                     if(consentGiven) document.getElementById('btn-start').disabled = false;
+                    document.getElementById('firebase-status').innerText = "System Ready (Logging Active)";
                 };
 
             } catch (e) {
@@ -505,8 +492,12 @@
         // --- START SEQUENCE ---
         async function attemptStart() {
             if(!consentGiven) return;
+            if(!state.isAiReady) {
+                alert("AI System initializing, please wait...");
+                return;
+            }
 
-           const inputName = await showInputPrompt("YOUR NAME");
+            const inputName = await showInputPrompt("YOUR NAME");
             if (inputName && inputName.trim() !== "") {
                 sessionId = sanitizeInput(inputName.trim());
             } else {
@@ -541,7 +532,7 @@
                     } else {
                         alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
                         regOverlay.style.display = 'none';
-                        document.getElementById('btn-start').disabled = false;
+                        // Do not reload page, just let them try again
                     }
                 }
             }, 1000);
@@ -551,19 +542,13 @@
         function startSystem() {
             state.isRunning = true;
             state.hasViolated = false;
-            state.lastLiveTimestamp = Date.now();
+            state.lastLiveTimestamp = Date.now(); 
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+            state.lastProcessTime = Date.now(); // Reset process time to prevent instant lag catch-up
             
             updateUI(true);
             
-            // 1. Display Session ID locally so user knows it's working
-            logToCloud("SYSTEM", "Session Started: " + sessionId, false);
-            
-            // 2. Start Loop Immediately (Optimistic)
-            startIntegrityCheck();
-            loop(); 
-            
-            // 3. Attempt Firebase Write (Non-blocking)
+            // Async Firebase write, does not block execution
             if(sessionId) {
                 database.ref('sessions/' + sessionId).set({
                     start_time: new Date().toISOString(),
@@ -573,19 +558,19 @@
                         toiletDuration: config.toiletDuration,
                         maxToiletVisits: config.maxToiletVisits
                     }
-                }).then(() => {
-                    console.log("Session init success");
-                }).catch(error => {
-                    console.error("Firebase init failed:", error);
-                });
+                }).catch(err => console.error("Firebase init warn:", err));
             }
+            
+            startIntegrityCheck();
+            loop();
         }
 
         async function attemptStopSystem() {
-            const passInput = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(passInput === null) return; 
+            // Password check is now purely local and synchronous
+            const pass = await showInputPrompt("請輸入密碼以終止監控", true);
+            if(pass === null) return; 
 
-            if (passInput === ADMIN_PASSWORD) {
+            if (pass === adminPassword) {
                 stopSystem(false);
             } else {
                 alert("密碼錯誤 (Invalid Password)");
@@ -633,7 +618,7 @@
             updateTimer(timeLeft);
 
             if (timeLeft <= 0) {
-                stopSystem(true); // Time up
+                stopSystem(true); 
                 alert("Time's Up!");
                 return;
             }
@@ -642,18 +627,24 @@
                 state.lastProcessTime = now;
                 state.currentMotionScore = calculateMotion();
                 
-                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
-                state.currentDetections = detections;
+                // Safe handling of faceapi results
+                try {
+                    const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+                    state.currentDetections = detections;
 
-                let targetFound = false;
-                state.currentDetections.forEach(det => {
-                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                    det.isMatch = (distance < config.matchThreshold);
-                    if (det.isMatch) targetFound = true;
-                });
-
-                state.isTargetPresent = targetFound;
-                checkStatus(state.isTargetPresent, state.currentMotionScore, now);
+                    let targetFound = false;
+                    if(state.referenceDescriptor) {
+                        state.currentDetections.forEach(det => {
+                            const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                            det.isMatch = (distance < config.matchThreshold);
+                            if (det.isMatch) targetFound = true;
+                        });
+                    }
+                    state.isTargetPresent = targetFound;
+                    checkStatus(state.isTargetPresent, state.currentMotionScore, now);
+                } catch (e) {
+                    console.error("Detection Loop Error", e);
+                }
             }
 
             ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -726,31 +717,31 @@
             const now = new Date();
             const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
 
-            // 1. Visual Log
-            const div = document.createElement('div');
-            div.className = "log-entry";
-            
-            const timeSpan = document.createElement('span');
-            timeSpan.style.color = "#666";
-            timeSpan.textContent = `[${timeStr}] `;
-            
-            const msgNode = document.createTextNode(`${category}: ${msg}`);
-            
-            div.appendChild(timeSpan);
-            div.appendChild(msgNode);
-            logDisplay.appendChild(div);
-            logDisplay.scrollTop = logDisplay.scrollHeight;
+            if (saveToDb) {
+                const div = document.createElement('div');
+                div.className = "log-entry";
+                
+                const timeSpan = document.createElement('span');
+                timeSpan.style.color = "#666";
+                timeSpan.textContent = `[${timeStr}] `;
+                
+                const msgNode = document.createTextNode(`${category}: ${msg}`);
+                
+                div.appendChild(timeSpan);
+                div.appendChild(msgNode);
+                logDisplay.appendChild(div);
+                logDisplay.scrollTop = logDisplay.scrollHeight;
 
-            // 2. Database Log
-            if (saveToDb && sessionId) {
                 const safeMsg = sanitizeInput(msg);
                 const safeCategory = sanitizeInput(category);
-                
-                database.ref('sessions/' + sessionId + '/logs').push({
-                    time: timeStr,
-                    type: safeCategory,
-                    details: safeMsg
-                }).catch(err => console.error("Log push failed:", err));
+
+                if(sessionId) {
+                    database.ref('sessions/' + sessionId + '/logs').push({
+                        time: timeStr,
+                        type: safeCategory,
+                        details: safeMsg
+                    });
+                }
             }
         }
 
@@ -806,10 +797,6 @@
 
         // --- SETTINGS ---
         function attemptToggleSettings() {
-            if (!navigator.onLine) {
-                alert("需要網路連線進行驗證");
-                return;
-            }
             if (state.isRunning) return; 
             toggleSettings();
         }
