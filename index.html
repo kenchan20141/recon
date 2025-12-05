@@ -287,7 +287,7 @@
                 <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
                 <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
-                <button onclick="attemptToggleSettings()">⚙ CONFIG / LOGS</button>
+               <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
             </div>
 
             <div class="settings-panel" id="settings-panel">
@@ -670,15 +670,21 @@ if (!navigator.onLine) {
 
 }
 
-        function updateUI(active) {
-            document.getElementById('btn-start').disabled = active;
-            document.getElementById('btn-stop').disabled = !active;
-            document.getElementById('btn-toilet').disabled = !active;
-            document.getElementById('led-status').className = active ? "led scan" : "led";
-            document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE (生物鎖定中)" : "TERMINATED (已終止)";
-            if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
-            timeoutBar.style.width = active ? "100%" : "0%";
-        }
+       function updateUI(active) {
+    document.getElementById('btn-start').disabled = active;
+    document.getElementById('btn-stop').disabled = !active;
+    document.getElementById('btn-toilet').disabled = !active;
+    // 新增這一行來控制設定按鈕的禁用狀態
+    // 假設設定按鈕是直接綁定 onclick="attemptToggleSettings()" 的那個 button
+    // 你需要給該按鈕一個 ID 以便操作，例如 id="btn-settings"
+    // 如果你的 HTML 中沒有給設定按鈕 ID，請先修改 HTML
+    // <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
+    document.getElementById('btn-settings').disabled = active;
+    document.getElementById('led-status').className = active ? "led scan" : "led";
+    document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE (生物鎖定中)" : "TERMINATED (已終止)";
+    if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
+    timeoutBar.style.width = active ? "100%" : "0%";
+}
 
         // --- MAIN LOOP ---
         async function loop() {
@@ -864,31 +870,22 @@ function checkStatus(targetPresent, motionScore, now) {
         }
 
         // --- SETTINGS (PASSWORD PROTECTED) ---
-        async function attemptToggleSettings() {
+       function attemptToggleSettings() {
+    // 在這兩個函數開頭添加
+    if (!navigator.onLine) {
+      alert("需要網路連線進行驗證");
+      return;
+    }
 
-// 在這兩個函數開頭添加
-if (!navigator.onLine) {
-  alert("需要網路連線進行驗證");
-  return;
+    // 如果系統正在運行，則不允許打開設定面板
+    if (state.isRunning) {
+        // 不顯示警告，直接返回
+        return;
+    }
+
+    // 系統未運行時，直接切換設定面板
+    toggleSettings();
 }
-
-            
-            const panel = document.getElementById('settings-panel');
-            
-            if (!panel.classList.contains('open')) {
-                const pass = await showInputPrompt("請輸入管理員密碼", true);
-                if(pass === null) return; 
-
-                if (pass === adminPassword) {
-                    toggleSettings();
-                } else {
-                    alert("密碼錯誤 (Invalid Password)");
-                    setTimeout(() => location.reload(), 2000); // 2秒後自動刷新
-                }
-            } else {
-                toggleSettings();
-            }
-        }
 
         function toggleSettings() {
             const panel = document.getElementById('settings-panel');
