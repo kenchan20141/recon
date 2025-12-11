@@ -473,14 +473,15 @@ lastHandsVisible: 0,
         
         const PROCESS_INTERVAL = 200; 
 
-        const config = {
-            matchThreshold: 0.55,
-            maxToiletVisits: 1, 
-            toiletDuration: 5, 
-            sessionMinutes: 30, 
-            timeoutMs: 5000,
-            motionThreshold: 0.5 
-        };
+       const config = {
+    matchThreshold: 0.55,
+    maxToiletVisits: 1, 
+    toiletDuration: 5, 
+    sessionMinutes: 30, 
+    timeoutMs: 5000,
+    motionThreshold: 0.5,
+    handsVisibilityTimeout: 5000 // 雙手檢測超時設定為5秒
+};
 
         const diffCanvas = document.createElement('canvas');
         diffCanvas.width = 64; diffCanvas.height = 48;
@@ -663,7 +664,13 @@ try {
 function updateHandStatus(handsCount) {
     const statusText = document.getElementById('text-status');
     if (statusText.innerText.includes("BIO-LOCK ACTIVE")) {
-        statusText.innerText = `BIO-LOCK ACTIVE | 手掌: ${handsCount}/2`;
+        if (handsCount >= 2) {
+            statusText.innerText = "BIO-LOCK ACTIVE | 雙手掌已偵測";
+        } else if (handsCount === 1) {
+            statusText.innerText = "BIO-LOCK ACTIVE | 偵測到單手";
+        } else {
+            statusText.innerText = "BIO-LOCK ACTIVE | 未偵測到手掌";
+        }
     }
 }
 
@@ -830,43 +837,79 @@ if (state.handsDetected !== prevHandsCount) {
             }
         }
 
-        function checkHandsVisibility(now) {
+       function checkHandsVisibility(now) {
     if (state.isToilet) return; // 廁所時間不檢查
     
     const handsNotVisibleTime = now - state.lastHandsVisible;
     
-    // 如果超過 3 秒沒看到兩隻手掌
-    if (handsNotVisibleTime > 3000) {
-        if (!state.lastHandsAlert || now - state.lastHandsAlert > 10000) { // 10秒冷卻
-            triggerAlarm("雙手離開鏡頭範圍 - 請將手掌放在桌上");
+    // 只有當雙手同時不在鏡頭中超過5秒才觸發警告
+    if (state.handsDetected < 2 && handsNotVisibleTime > config.handsVisibilityTimeout) {
+        // 防止連續觸發，設定2秒冷卻時間
+        if (!state.lastHandsAlert || now - state.lastHandsAlert > 2000) {
+            triggerAlarm("雙手離開鏡頭範圍超過限制時間");
             state.lastHandsAlert = now;
             state.hasViolated = true;
-            logToCloud("VIOLATION", "雙手離開鏡頭範圍", true);
+            logToCloud("VIOLATION", `雙手離開鏡頭範圍超過 ${config.handsVisibilityTimeout/1000} 秒`, true);
         }
         
-        // 顯示手掌位置指引
-        ctx.fillStyle = 'rgba(255, 0, 85, 0.3)';
-        ctx.fillRect(0, canvas.height * 0.7, canvas.width, canvas.height * 0.3);
-        ctx.font = '24px Orbitron';
-        ctx.fillStyle = '#ff0055';
+        // 在畫面頂部顯示警告文字，不遮擋鏡頭畫面
+        ctx.font = '20px Orbitron';
+        ctx.fillStyle = 'rgba(255, 0, 85, 0.8)';
         ctx.textAlign = 'center';
-        ctx.fillText('!! 請將雙手放在桌上 !!', canvas.width / 2, canvas.height * 0.85);
-    } else {
-        // 顯示理想的雙手位置指引
-        ctx.strokeStyle = 'rgba(0, 243, 255, 0.7)';
+        ctx.fillText('!! 雙手應保持在鏡頭範圍內 !!', canvas.width / 2, canvas.height * 0.1);
+    }
+    
+    // 顯示目前偵測到的手掌數量
+    ctx.font = '16px Rajdhani';
+    ctx.fillStyle = 'rgba(0, 243, 255, 0.9)';
+    ctx.textAlign = 'right';
+    ctx.fillText(`手掌偵測: ${state.handsDetected}/2`, canvas.width - 20, 30);
+    
+    // 顯示雙手未被偵測的時間
+    if (state.handsDetected < 2) {
+        const seconds = Math.min(5, Math.floor(handsNotVisibleTime / 1000));
+        ctx.fillStyle = seconds >= 4 ? 'rgba(255, 0, 85, 0.8)' : 'rgba(255, 204, 0, 0.8)';
+        ctx.fillText(`未偵測雙手: ${seconds}s`, canvas.width - 20, 55);
+    }
+}
+
+// 修改 loop() 中的手掌偵測部分
+if (state.handModel && (!state.lastHandProcessTime || now - state.lastHandProcessTime > 400)) {
+    state.lastHandProcessTime = now;
+    try {
+        const hands = await state.handModel.estimateHands(video);
+        state.handsDetected = hands.length;
+        
+        // 只要檢測到雙手，就更新最後可見時間
+        if (hands.length >= 2) {
+            state.lastHandsVisible = now;
+        }
+        
+        // 可視化手部關節點
+        ctx.strokeStyle = '#00ff9d';
         ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        
-        // 左手區域
-        ctx.strokeRect(canvas.width * 0.1, canvas.height * 0.7, canvas.width * 0.3, canvas.height * 0.25);
-        // 右手區域
-        ctx.strokeRect(canvas.width * 0.6, canvas.height * 0.7, canvas.width * 0.3, canvas.height * 0.25);
-        
-        ctx.setLineDash([]);
-        ctx.font = '16px Rajdhani';
-        ctx.fillStyle = 'rgba(0, 243, 255, 0.8)';
-        ctx.fillText('左手', canvas.width * 0.25, canvas.height * 0.85);
-        ctx.fillText('右手', canvas.width * 0.75, canvas.height * 0.85);
+        hands.forEach(hand => {
+            // 繪製手部骨架
+            const fingers = [[0,1,2,3,4], [0,5,6,7,8], [0,9,10,11,12], [0,13,14,15,16], [0,17,18,19,20]];
+            fingers.forEach(finger => {
+                ctx.beginPath();
+                finger.forEach((pointIdx, i) => {
+                    const [x, y] = hand.landmarks[pointIdx];
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            });
+            
+            // 繪製手掌中心點
+            const palmCenter = hand.landmarks[9];
+            ctx.fillStyle = 'rgba(0, 255, 157, 0.7)';
+            ctx.beginPath();
+            ctx.arc(palmCenter[0], palmCenter[1], 8, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+    } catch (error) {
+        console.warn("Hand detection error:", error);
     }
 }
 
