@@ -6,18 +6,14 @@
 
     <!-- SECURITY: Content Security Policy (CSP) -->
     <!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源 -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com https://cdn.jsdelivr.net/npm/@tensorflow/ ; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com ; font-src https://fonts.gstatic.com ; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io https://cdn.jsdelivr.net wss://*.firebaseio.com;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io wss://*.firebaseio.com;">
+
     <title>AI RECON - Secure Monitor</title>
 
     <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-
-    <!-- 在現有 script 標籤下方添加 -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.10.0/dist/tf-core.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.10.0/dist/tf-converter.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose@0.0.7/dist/handpose.min.js"></script>
 
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
@@ -464,11 +460,7 @@
             
             lastProcessTime: 0,
             currentDetections: [], 
-            currentMotionScore: 100,
-
-            handModel: null,
-handsDetected: 0,
-lastHandsVisible: 0,
+            currentMotionScore: 100
         };
         
         const PROCESS_INTERVAL = 200; 
@@ -518,15 +510,6 @@ lastHandsVisible: 0,
             }
 
             if (state.isRunning) stopSystem(false);
-
-// 初始化 Handpose 模型
-try {
-    state.handModel = await handpose.load();
-    console.log("Handpose model loaded");
-} catch (e) {
-    console.error("Failed to load handpose model:", e);
-}
-            
         }
         init();
 
@@ -659,117 +642,53 @@ try {
             timeoutBar.style.width = active ? "100%" : "0%";
         }
 
-// 確保狀態顯示更新
-function updateHandStatus(handsCount) {
-    const statusText = document.getElementById('text-status');
-    if (statusText.innerText.includes("BIO-LOCK ACTIVE")) {
-        statusText.innerText = `BIO-LOCK ACTIVE | 手掌: ${handsCount}/2`;
-    }
-}
-
-// 在 loop() 函式中的 hand detection 部分更新狀態
-if (state.handsDetected !== prevHandsCount) {
-    updateHandStatus(state.handsDetected);
-    prevHandsCount = state.handsDetected;
-}
-
         // --- MAIN LOOP ---
- async function loop() {
-    if (!state.isRunning) return;
-    if (state.isToilet) { 
-        // 廁所模式中只更新計時器，不執行偵測
-        const now = Date.now();
-        const timeLeft = state.sessionEndTime - now;
-        updateTimer(timeLeft);
-        if (timeLeft <= 0) {
-            stopSystem(true);
-            alert("Time's Up!");
-            return;
-        }
-        state.animId = requestAnimationFrame(loop); 
-        return; 
-    }
-    const now = Date.now();
-    const timeLeft = state.sessionEndTime - now;
-    updateTimer(timeLeft);
-    if (timeLeft <= 0) {
-        stopSystem(true); // 時間到，自動正常結束
-        alert("Time's Up!");
-        return;
-    }
-    // 臉部偵測（每200ms執行一次）
-    if (now - state.lastProcessTime > PROCESS_INTERVAL) {
-        state.lastProcessTime = now;
-        state.currentMotionScore = calculateMotion();
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
-        state.currentDetections = detections;
-        let targetFound = false;
-        state.currentDetections.forEach(det => {
-            const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-            det.isMatch = (distance < config.matchThreshold);
-            if (det.isMatch) targetFound = true;
-        });
-        state.isTargetPresent = targetFound;
-        checkStatus(state.isTargetPresent, state.currentMotionScore, now);
-    }
-    // 手掌偵測（每400ms執行一次，減少運算負擔）
-    if (state.handModel && (!state.lastHandProcessTime || now - state.lastHandProcessTime > 400)) {
-        state.lastHandProcessTime = now;
-        try {
-            const hands = await state.handModel.estimateHands(video);
-            state.handsDetected = hands.length;
-            // 只要偵測到兩隻手，更新最後可見時間
-            if (hands.length >= 2) {
-                state.lastHandsVisible = now;
+        async function loop() {
+            if (!state.isRunning) return;
+            if (state.isToilet) { state.animId = requestAnimationFrame(loop); return; }
+
+            const now = Date.now();
+            const timeLeft = state.sessionEndTime - now;
+            updateTimer(timeLeft);
+
+            if (timeLeft <= 0) {
+                stopSystem(true); // 時間到，自動正常結束
+                alert("Time's Up!");
+                return;
             }
-            
-            // 繪製手部追蹤框
-            ctx.strokeStyle = '#00ff9d';
-            ctx.lineWidth = 3;
-            ctx.font = '14px Rajdhani';
-            ctx.fillStyle = '#00ff9d';
-            
-            hands.forEach((hand, index) => {
-                // 計算手部邊界框
-                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                hand.landmarks.forEach(([x, y]) => {
-                    minX = Math.min(minX, x);
-                    minY = Math.min(minY, y);
-                    maxX = Math.max(maxX, x);
-                    maxY = Math.max(maxY, y);
-                });
+
+            if (now - state.lastProcessTime > PROCESS_INTERVAL) {
+                state.lastProcessTime = now;
+                state.currentMotionScore = calculateMotion();
                 
-                // 繪製手部追蹤框
-                ctx.strokeRect(minX - 10, minY - 10, maxX - minX + 20, maxY - minY + 20);
-                ctx.fillText(`Hand ${index + 1}`, minX - 10, minY - 15);
+                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
+                state.currentDetections = detections;
+
+                let targetFound = false;
+                state.currentDetections.forEach(det => {
+                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                    det.isMatch = (distance < config.matchThreshold);
+                    if (det.isMatch) targetFound = true;
+                });
+
+                state.isTargetPresent = targetFound;
+                checkStatus(state.isTargetPresent, state.currentMotionScore, now);
+            }
+
+            ctx.clearRect(0,0,canvas.width,canvas.height);
+            state.currentDetections.forEach(det => {
+                const box = det.detection.box;
+                const drawBox = new faceapi.draw.DrawBox(box, { 
+                    label: det.isMatch ? "TARGET" : "UNKNOWN",
+                    boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
+                    lineWidth: 2
+                });
+                drawBox.draw(canvas);
             });
-        } catch (error) {
-            console.warn("Hand detection error:", error);
+
+            updateTimeoutBar(now);
+            state.animId = requestAnimationFrame(loop);
         }
-    }
-    // 清除之前的繪圖
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // 繪製臉部偵測結果
-    state.currentDetections.forEach(det => {
-        const box = det.detection.box;
-        const drawBox = new faceapi.draw.DrawBox(box, { 
-            label: det.isMatch ? "TARGET" : "UNKNOWN",
-            boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
-            lineWidth: 2
-        });
-        drawBox.draw(canvas);
-    });
-    // 檢查手掌是否在鏡頭範圍內
-    checkHandsVisibility(now);
-    // 更新狀態顯示
-    updateHandStatus(state.handsDetected);
-    // 僅在雙手都在時才更新正常的臉部超時條
-    if (state.handsDetected >= 2 && (!timeoutBar.dataset.mode || timeoutBar.dataset.mode !== "hands")) {
-        updateTimeoutBar(now);
-    }
-    // 繼續下一幀
-    state.animId = requestAnimationFrame(loop);
-}
 
         function checkStatus(targetPresent, motionScore, now) {
             if (targetPresent && motionScore > config.motionThreshold) {
@@ -782,44 +701,6 @@ if (state.handsDetected !== prevHandsCount) {
             }
         }
 
-  function checkHandsVisibility(now) {
-    if (state.isToilet) return; // 廁所時間不檢查
-    
-    // 計算雙手不見的時間
-    const handsNotVisibleTime = now - state.lastHandsVisible;
-    
-    // 當雙手離開鏡頭時更新超時條
-    if (handsNotVisibleTime > 0 && state.handsDetected < 2) {
-        const handsTimeoutMs = 5000; // 5秒超時
-        const handsBarPct = Math.max(0, (handsTimeoutMs - handsNotVisibleTime) / handsTimeoutMs) * 100;
-        
-        // 覆蓋超時條以顯示手部超時進度
-        timeoutBar.style.width = handsBarPct + "%";
-        timeoutBar.style.backgroundColor = handsBarPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
-        timeoutBar.dataset.mode = "hands"; // 標記為手部超時模式
-        
-        // 超過5秒才觸發警報
-        if (handsNotVisibleTime > handsTimeoutMs) {
-            if (!state.lastHandsAlert || now - state.lastHandsAlert > 10000) { // 10秒冷卻
-                triggerAlarm("雙手離開鏡頭範圍 - 請將手掌放在桌上");
-                state.lastHandsAlert = now;
-                state.hasViolated = true;
-                logToCloud("VIOLATION", "雙手離開鏡頭範圍", true);
-            }
-        }
-    } else {
-        // 如果超時條處於手部模式，移除標記
-        if (timeoutBar.dataset.mode === "hands") {
-            delete timeoutBar.dataset.mode;
-        }
-    }
-    
-    // 繪製手部追蹤框 (移除藍色虛線)
-    ctx.strokeStyle = '#00ff9d';
-    ctx.lineWidth = 3;
-    ctx.font = '14px Rajdhani';
-    ctx.fillStyle = '#00ff9d';
-}
         function updateTimeoutBar(now) {
             const elapsed = now - state.lastLiveTimestamp;
             const barPct = Math.max(0, (config.timeoutMs - elapsed) / config.timeoutMs) * 100;
