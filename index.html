@@ -674,7 +674,7 @@ if (state.handsDetected !== prevHandsCount) {
 }
 
         // --- MAIN LOOP ---
-  async function loop() {
+ async function loop() {
     if (!state.isRunning) return;
     if (state.isToilet) { 
         // 廁所模式中只更新計時器，不執行偵測
@@ -718,12 +718,12 @@ if (state.handsDetected !== prevHandsCount) {
         try {
             const hands = await state.handModel.estimateHands(video);
             state.handsDetected = hands.length;
-            // 簡化邏輯：只要偵測到兩隻手在鏡頭範圍內
+            // 只要偵測到兩隻手，更新最後可見時間
             if (hands.length >= 2) {
                 state.lastHandsVisible = now;
             }
             
-            // 繪製手部追蹤框 - 新增功能
+            // 繪製手部追蹤框
             ctx.strokeStyle = '#00ff9d';
             ctx.lineWidth = 3;
             ctx.font = '14px Rajdhani';
@@ -763,8 +763,8 @@ if (state.handsDetected !== prevHandsCount) {
     checkHandsVisibility(now);
     // 更新狀態顯示
     updateHandStatus(state.handsDetected);
-    // 僅在雙手都在時更新正常的超時條
-    if (state.lastHandsVisible === now || now - state.lastHandsVisible < 5000) {
+    // 僅在雙手都在時才更新正常的臉部超時條
+    if (state.handsDetected >= 2 && (!timeoutBar.dataset.mode || timeoutBar.dataset.mode !== "hands")) {
         updateTimeoutBar(now);
     }
     // 繼續下一幀
@@ -782,22 +782,21 @@ if (state.handsDetected !== prevHandsCount) {
             }
         }
 
-     function checkHandsVisibility(now) {
+  function checkHandsVisibility(now) {
     if (state.isToilet) return; // 廁所時間不檢查
     
     // 計算雙手不見的時間
     const handsNotVisibleTime = now - state.lastHandsVisible;
     
-    // 更新超時條，使用相同的條但為雙手不見情況
-    if (handsNotVisibleTime > 0) {
+    // 當雙手離開鏡頭時更新超時條
+    if (handsNotVisibleTime > 0 && state.handsDetected < 2) {
         const handsTimeoutMs = 5000; // 5秒超時
         const handsBarPct = Math.max(0, (handsTimeoutMs - handsNotVisibleTime) / handsTimeoutMs) * 100;
         
-        // 僅在雙手不見時覆蓋超時條
-        if (handsNotVisibleTime > 0 && handsNotVisibleTime < handsTimeoutMs) {
-            timeoutBar.style.width = handsBarPct + "%";
-            timeoutBar.style.backgroundColor = handsBarPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
-        }
+        // 覆蓋超時條以顯示手部超時進度
+        timeoutBar.style.width = handsBarPct + "%";
+        timeoutBar.style.backgroundColor = handsBarPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
+        timeoutBar.dataset.mode = "hands"; // 標記為手部超時模式
         
         // 超過5秒才觸發警報
         if (handsNotVisibleTime > handsTimeoutMs) {
@@ -808,12 +807,18 @@ if (state.handsDetected !== prevHandsCount) {
                 logToCloud("VIOLATION", "雙手離開鏡頭範圍", true);
             }
         }
+    } else {
+        // 如果超時條處於手部模式，移除標記
+        if (timeoutBar.dataset.mode === "hands") {
+            delete timeoutBar.dataset.mode;
+        }
     }
     
-    // 不再繪製藍色虛線框
-    // 移除了ctx.setLineDash和strokeRect等相關代碼
-    
-    // 狀態顯示已在loop中處理
+    // 繪製手部追蹤框 (移除藍色虛線)
+    ctx.strokeStyle = '#00ff9d';
+    ctx.lineWidth = 3;
+    ctx.font = '14px Rajdhani';
+    ctx.fillStyle = '#00ff9d';
 }
         function updateTimeoutBar(now) {
             const elapsed = now - state.lastLiveTimestamp;
