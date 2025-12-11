@@ -472,11 +472,7 @@
             sessionMinutes: 30, 
             timeoutMs: 5000,
             motionThreshold: 0.5 
-       // 新增：雙手掌偵測設定
-    handCheckEnabled: true,           // 開關
-    handMinY: 0.55,                   // 手掌中心點必須低於畫面 55%（脖子以下）
-    handMaxDistanceFromFace: 0.45,    // 手掌離臉部中心最遠不能超過畫面寬度的 45%
-    handViolationTimeout: 3000        // 連續幾毫秒沒偵測到雙手就警告（避免誤判）
+        };
 
         const diffCanvas = document.createElement('canvas');
         diffCanvas.width = 64; diffCanvas.height = 48;
@@ -674,65 +670,6 @@
                     det.isMatch = (distance < config.matchThreshold);
                     if (det.isMatch) targetFound = true;
                 });
-
-                // === 新增：雙手掌偵測（只針對目標人物）===
-let handsVisible = { left: false, right: false };
-if (config.handCheckEnabled && targetFound) {
-    state.currentDetections.forEach(det => {
-        if (!det.isMatch) return;
-
-        const landmarks = det.landmarks;
-        const imageWidth = video.videoWidth;
-        const imageHeight = video.videoHeight;
-
-        // 臉部中心點（鼻尖）
-        const noseTip = landmarks.getNose()[3]; // 第4個點最接近鼻尖
-
-        // 左手掌估計區域：用下巴 + 左臉頰外側往下延伸
-        const jawLeft = landmarks.getJawOutline()[1];     // 下巴最左
-        const cheekLeft = landmarks.getLeftEye()[0];      // 左眼左端
-
-        // 右手掌估計區域：下巴最右 + 右眼右端
-        const jawRight = landmarks.getJawOutline()[15];
-        const cheekRight = landmarks.getRightEye()[3];
-
-        // 計算兩個「手掌可能區域」的中心點」
-        const leftHandCenter = {
-            x: jawLeft.x * 0.4 + cheekLeft.x * 0.6,
-            y: Math.max(jawLeft.y, cheekLeft.y) + (imageHeight * 0.25) // 再往下偏移
-        };
-        const rightHandCenter = {
-            x: jawRight.x * 0.6 + cheekRight.x * 0.4,
-            y: Math.max(jawRight.y, cheekRight.y) + (imageHeight * 0.25)
-        };
-
-        // 判斷這兩個點是否真的在「手該在的位置」（脖子以下、不要太遠）
-        const normalize = (val, size) => val / size;
-
-        const checkHand = (hx, hy) => {
-            const ny = normalize(hy, imageHeight);
-            const distFromNose = Math.sqrt(
-                Math.pow(normalize(hx, imageWidth) - normalize(noseTip.x, imageWidth))**2 +
-                Math.pow(ny - normalize(noseTip.y, imageHeight))**2
-            );
-            return ny > config.handMinY && distFromNose < config.handMaxDistanceFromFace;
-        };
-
-        handsVisible.left = checkHand(leftHandCenter.x, leftHandCenter.y);
-        handsVisible.right = checkHand(rightHandCenter.x, rightHandCenter.y);
-    });
-}
-
-// 連續沒看到雙手才算違規（防抖）
-if (!handsVisible.left || !handsVisible.right) {
-    if (!state.handViolationStart) state.handViolationStart = now;
-    else if (now - state.handViolationStart > config.handViolationTimeout) {
-        triggerAlarm("雙手未放在桌上 / 手掌離開視野");
-        state.hasViolated = true;
-    }
-} else {
-    state.handViolationStart = null; // 重置
-}
 
                 state.isTargetPresent = targetFound;
                 checkStatus(state.isTargetPresent, state.currentMotionScore, now);
