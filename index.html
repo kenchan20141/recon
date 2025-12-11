@@ -663,10 +663,7 @@ try {
 function updateHandStatus(handsCount) {
     const statusText = document.getElementById('text-status');
     if (statusText.innerText.includes("BIO-LOCK ACTIVE")) {
-        // 根據手的數量顯示不同狀態
-        let handsStatus = handsCount >= 2 ? "雙手已鎖定" : handsCount === 1 ? "單手偵測中" : "未偵測到手";
-        let color = handsCount >= 2 ? '#00ff9d' : handsCount === 1 ? '#ffcc00' : '#ff0055';
-        statusText.innerHTML = `BIO-LOCK ACTIVE | <span style="color:${color}">${handsStatus}</span>`;
+        statusText.innerText = `BIO-LOCK ACTIVE | 手掌: ${handsCount}/2`;
     }
 }
 
@@ -677,7 +674,7 @@ if (state.handsDetected !== prevHandsCount) {
 }
 
         // --- MAIN LOOP ---
-async function loop() {
+  async function loop() {
     if (!state.isRunning) return;
     if (state.isToilet) { 
         // 廁所模式中只更新計時器，不執行偵測
@@ -725,40 +722,26 @@ async function loop() {
             if (hands.length >= 2) {
                 state.lastHandsVisible = now;
             }
-            // 可視化手部關節點
+            
+            // 繪製手部追蹤框 - 新增功能
             ctx.strokeStyle = '#00ff9d';
-            ctx.lineWidth = 2;
-            hands.forEach(hand => {
-                // 繪製手部骨架
-                const fingers = [[0,1,2,3,4], [0,5,6,7,8], [0,9,10,11,12], [0,13,14,15,16], [0,17,18,19,20]];
-                fingers.forEach(finger => {
-                    ctx.beginPath();
-                    finger.forEach((pointIdx, i) => {
-                        const [x, y] = hand.landmarks[pointIdx];
-                        if (i === 0) ctx.moveTo(x, y);
-                        else ctx.lineTo(x, y);
-                    });
-                    ctx.stroke();
-                });
-                
-                // 計算並繪製每隻手的追蹤框
-                const landmarks = hand.landmarks;
+            ctx.lineWidth = 3;
+            ctx.font = '14px Rajdhani';
+            ctx.fillStyle = '#00ff9d';
+            
+            hands.forEach((hand, index) => {
+                // 計算手部邊界框
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                landmarks.forEach(([x, y]) => {
+                hand.landmarks.forEach(([x, y]) => {
                     minX = Math.min(minX, x);
                     minY = Math.min(minY, y);
                     maxX = Math.max(maxX, x);
                     maxY = Math.max(maxY, y);
                 });
-                // 繪製手部邊界框 (增加一些邊距)
-                ctx.strokeStyle = '#00ff9d';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(minX - 15, minY - 15, maxX - minX + 30, maxY - minY + 30);
                 
-                // 標示左手/右手
-                ctx.font = '14px Rajdhani';
-                ctx.fillStyle = '#00ff9d';
-                ctx.fillText(hand.handedness, minX - 15, minY - 20);
+                // 繪製手部追蹤框
+                ctx.strokeRect(minX - 10, minY - 10, maxX - minX + 20, maxY - minY + 20);
+                ctx.fillText(`Hand ${index + 1}`, minX - 10, minY - 15);
             });
         } catch (error) {
             console.warn("Hand detection error:", error);
@@ -780,8 +763,10 @@ async function loop() {
     checkHandsVisibility(now);
     // 更新狀態顯示
     updateHandStatus(state.handsDetected);
-    // 更新超時進度條
-    updateTimeoutBar(now);
+    // 僅在雙手都在時更新正常的超時條
+    if (state.lastHandsVisible === now || now - state.lastHandsVisible < 5000) {
+        updateTimeoutBar(now);
+    }
     // 繼續下一幀
     state.animId = requestAnimationFrame(loop);
 }
@@ -799,60 +784,53 @@ async function loop() {
 
      function checkHandsVisibility(now) {
     if (state.isToilet) return; // 廁所時間不檢查
+    
+    // 計算雙手不見的時間
     const handsNotVisibleTime = now - state.lastHandsVisible;
     
-    // 顯示手部狀態
-    ctx.font = '16px Rajdhani';
-    ctx.fillStyle = state.handsDetected >= 2 ? '#00ff9d' : '#ffcc00';
-    ctx.fillText(`手掌: ${state.handsDetected}/2`, canvas.width - 120, 30);
-    
-    // 如果超過 5 秒沒看到雙手
-    if (handsNotVisibleTime > 5000) {
-        if (!state.lastHandsAlert || now - state.lastHandsAlert > 10000) { // 10秒冷卻
-            triggerAlarm("雙手離開鏡頭範圍 - 請將手掌放在桌上");
-            state.lastHandsAlert = now;
-            state.hasViolated = true;
-            logToCloud("VIOLATION", "雙手離開鏡頭範圍", true);
+    // 更新超時條，使用相同的條但為雙手不見情況
+    if (handsNotVisibleTime > 0) {
+        const handsTimeoutMs = 5000; // 5秒超時
+        const handsBarPct = Math.max(0, (handsTimeoutMs - handsNotVisibleTime) / handsTimeoutMs) * 100;
+        
+        // 僅在雙手不見時覆蓋超時條
+        if (handsNotVisibleTime > 0 && handsNotVisibleTime < handsTimeoutMs) {
+            timeoutBar.style.width = handsBarPct + "%";
+            timeoutBar.style.backgroundColor = handsBarPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
         }
         
-        // 顯示警告文字
-        ctx.fillStyle = 'rgba(255, 0, 85, 0.3)';
-        ctx.fillRect(0, canvas.height * 0.7, canvas.width, canvas.height * 0.3);
-        ctx.font = '24px Orbitron';
-        ctx.fillStyle = '#ff0055';
-        ctx.textAlign = 'center';
-        ctx.fillText('!! 請將雙手放在桌上 !!', canvas.width / 2, canvas.height * 0.85);
-        ctx.textAlign = 'left'; // 重置 text align
-    }
-}
-      // 更新超時進度條函數
-function updateTimeoutBar(now) {
-    let elapsed, barPct;
-    
-    // 如果雙手離開超過5秒，使用手部計時器
-    if (state.handsDetected < 2 && (now - state.lastHandsVisible) > 5000) {
-        elapsed = now - state.lastHandsVisible - 5000; // 扣除5秒緩衝期
-        barPct = Math.max(0, (5000 - elapsed) / 5000) * 100; // 5秒後觸發警報
-        timeoutBar.style.backgroundColor = "var(--secondary-color)";
-    } else {
-        // 正常情況下使用標準計時器
-        elapsed = now - state.lastLiveTimestamp;
-        barPct = Math.max(0, (config.timeoutMs - elapsed) / config.timeoutMs) * 100;
-        timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
-    }
-    
-    timeoutBar.style.width = barPct + "%";
-    
-    // 檢查是否需要觸發警報
-    if (elapsed > config.timeoutMs) {
-        let reason = "";
-        if (!state.isTargetPresent) reason = "目標離開偵測範圍";
-        else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
-        if (reason) {
-            triggerAlarm(` ${reason}`); 
+        // 超過5秒才觸發警報
+        if (handsNotVisibleTime > handsTimeoutMs) {
+            if (!state.lastHandsAlert || now - state.lastHandsAlert > 10000) { // 10秒冷卻
+                triggerAlarm("雙手離開鏡頭範圍 - 請將手掌放在桌上");
+                state.lastHandsAlert = now;
+                state.hasViolated = true;
+                logToCloud("VIOLATION", "雙手離開鏡頭範圍", true);
+            }
         }
     }
+    
+    // 不再繪製藍色虛線框
+    // 移除了ctx.setLineDash和strokeRect等相關代碼
+    
+    // 狀態顯示已在loop中處理
 }
+        function updateTimeoutBar(now) {
+            const elapsed = now - state.lastLiveTimestamp;
+            const barPct = Math.max(0, (config.timeoutMs - elapsed) / config.timeoutMs) * 100;
+            timeoutBar.style.width = barPct + "%";
+            timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
+
+            if (elapsed > config.timeoutMs) {
+                let reason = "";
+                if (!state.isTargetPresent) reason = "目標離開偵測範圍";
+                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像";
+
+                if (reason) {
+                    triggerAlarm(` ${reason}`); 
+                }
+            }
+        }
 
         // --- ALARM & LOGGING ---
         function triggerAlarm(msg) {
