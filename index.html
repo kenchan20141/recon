@@ -716,43 +716,7 @@ async function loop() {
         checkStatus(state.isTargetPresent, state.currentMotionScore, now);
     }
     
-    // 手掌偵測
-    if (state.handModel && (!state.lastHandProcessTime || now - state.lastHandProcessTime > 400)) {
-        state.lastHandProcessTime = now;
-        try {
-            const hands = await state.handModel.estimateHands(video);
-            state.handsDetected = hands.length;
-            
-            if (hands.length >= 2) {
-                state.lastHandsVisible = now;
-            }
-            
-            // 可視化手部
-            ctx.strokeStyle = '#00ff9d';
-            ctx.lineWidth = 2;
-            hands.forEach(hand => {
-                const fingers = [[0,1,2,3,4], [0,5,6,7,8], [0,9,10,11,12], [0,13,14,15,16], [0,17,18,19,20]];
-                fingers.forEach(finger => {
-                    ctx.beginPath();
-                    finger.forEach((pointIdx, i) => {
-                        const [x, y] = hand.landmarks[pointIdx];
-                        if (i === 0) ctx.moveTo(x, y);
-                        else ctx.lineTo(x, y);
-                    });
-                    ctx.stroke();
-                });
-                
-                const palmCenter = hand.landmarks[9];
-                ctx.fillStyle = 'rgba(0, 255, 157, 0.7)';
-                ctx.beginPath();
-                ctx.arc(palmCenter[0], palmCenter[1], 8, 0, 2 * Math.PI);
-                ctx.fill();
-            });
-        } catch (error) {
-            console.warn("Hand detection error:", error);
-        }
-    }
-
+   
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // 繪製臉部偵測結果
