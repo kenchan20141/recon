@@ -659,7 +659,7 @@ try {
             timeoutBar.style.width = active ? "100%" : "0%";
         }
 
-        // 在 updateUI 函式附近加入新函式
+// 確保狀態顯示更新
 function updateHandStatus(handsCount) {
     const statusText = document.getElementById('text-status');
     if (statusText.innerText.includes("BIO-LOCK ACTIVE")) {
@@ -674,92 +674,54 @@ if (state.handsDetected !== prevHandsCount) {
 }
 
         // --- MAIN LOOP ---
-      async function loop() {
+     async function loop() {
     if (!state.isRunning) return;
     if (state.isToilet) { 
         // 廁所模式中只更新計時器，不執行偵測
         const now = Date.now();
         const timeLeft = state.sessionEndTime - now;
         updateTimer(timeLeft);
-        
         if (timeLeft <= 0) {
             stopSystem(true);
             alert("Time's Up!");
             return;
         }
-        
         state.animId = requestAnimationFrame(loop); 
         return; 
     }
-
     const now = Date.now();
     const timeLeft = state.sessionEndTime - now;
     updateTimer(timeLeft);
-
     if (timeLeft <= 0) {
         stopSystem(true); // 時間到，自動正常結束
         alert("Time's Up!");
         return;
     }
-
     // 臉部偵測（每200ms執行一次）
     if (now - state.lastProcessTime > PROCESS_INTERVAL) {
         state.lastProcessTime = now;
         state.currentMotionScore = calculateMotion();
-        
         const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
         state.currentDetections = detections;
-
         let targetFound = false;
         state.currentDetections.forEach(det => {
             const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
             det.isMatch = (distance < config.matchThreshold);
             if (det.isMatch) targetFound = true;
         });
-
         state.isTargetPresent = targetFound;
         checkStatus(state.isTargetPresent, state.currentMotionScore, now);
     }
-    
     // 手掌偵測（每400ms執行一次，減少運算負擔）
     if (state.handModel && (!state.lastHandProcessTime || now - state.lastHandProcessTime > 400)) {
         state.lastHandProcessTime = now;
         try {
             const hands = await state.handModel.estimateHands(video);
             state.handsDetected = hands.length;
-            
-            // 檢查手掌是否可見 - 判斷是否為手掌正面
+            // 簡化邏輯：只要偵測到兩隻手在鏡頭範圍內
             if (hands.length >= 2) {
-                let palmsVisible = 0;
-                hands.forEach(hand => {
-                    // 檢查手腕和手指的位置來判斷是否為手掌正面
-                    const wrist = hand.landmarks[0];
-                    const middleFingerMCP = hand.landmarks[9]; // 手掌中心點
-                    const indexFingerMCP = hand.landmarks[5];
-                    const pinkyFingerMCP = hand.landmarks[17];
-                    
-                    // 計算手掌向量
-                    const palmVectorX = indexFingerMCP[0] - pinkyFingerMCP[0];
-                    const palmVectorY = indexFingerMCP[1] - pinkyFingerMCP[1];
-                    
-                    // 計算從手腕到手掌中心的向量
-                    const wristToPalmX = middleFingerMCP[0] - wrist[0];
-                    const wristToPalmY = middleFingerMCP[1] - wrist[1];
-                    
-                    // 如果手腕到手掌中心的向量主要是向上的（Y軸負方向），則可能是手掌正面
-                    if (wristToPalmY < -5 && Math.abs(palmVectorX) > Math.abs(palmVectorY)) {
-                        palmsVisible++;
-                    }
-                });
-                
-                if (palmsVisible >= 2) {
-                    state.lastHandsVisible = now;
-                }
-            } else if (hands.length === 1) {
-                // 只有一隻手時，至少確保這隻手是可見的
                 state.lastHandsVisible = now;
             }
-            
             // 可視化手部關節點
             ctx.strokeStyle = '#00ff9d';
             ctx.lineWidth = 2;
@@ -775,26 +737,13 @@ if (state.handsDetected !== prevHandsCount) {
                     });
                     ctx.stroke();
                 });
-                
-                // 標示手掌區域
-                ctx.fillStyle = 'rgba(0, 255, 157, 0.3)';
-                const wrist = hand.landmarks[0];
-                const indexFinger = hand.landmarks[5];
-                const pinkyFinger = hand.landmarks[17];
-                const palmCenter = hand.landmarks[9];
-                const radius = Math.sqrt(Math.pow(indexFinger[0] - pinkyFinger[0], 2) + Math.pow(indexFinger[1] - pinkyFinger[1], 2)) * 0.7;
-                ctx.beginPath();
-                ctx.arc(palmCenter[0], palmCenter[1], radius, 0, 2 * Math.PI);
-                ctx.fill();
             });
         } catch (error) {
             console.warn("Hand detection error:", error);
         }
     }
-
     // 清除之前的繪圖
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     // 繪製臉部偵測結果
     state.currentDetections.forEach(det => {
         const box = det.detection.box;
@@ -805,16 +754,12 @@ if (state.handsDetected !== prevHandsCount) {
         });
         drawBox.draw(canvas);
     });
-    
     // 檢查手掌是否在鏡頭範圍內
     checkHandsVisibility(now);
-    
     // 更新狀態顯示
     updateHandStatus(state.handsDetected);
-    
     // 更新超時進度條
     updateTimeoutBar(now);
-    
     // 繼續下一幀
     state.animId = requestAnimationFrame(loop);
 }
@@ -830,46 +775,33 @@ if (state.handsDetected !== prevHandsCount) {
             }
         }
 
-        function checkHandsVisibility(now) {
+      function checkHandsVisibility(now) {
     if (state.isToilet) return; // 廁所時間不檢查
-    
     const handsNotVisibleTime = now - state.lastHandsVisible;
-    
-    // 如果超過 3 秒沒看到兩隻手掌
-    if (handsNotVisibleTime > 3000) {
+    // 修改為超過 5 秒才觸發警告
+    if (handsNotVisibleTime > 5000) {
         if (!state.lastHandsAlert || now - state.lastHandsAlert > 10000) { // 10秒冷卻
             triggerAlarm("雙手離開鏡頭範圍 - 請將手掌放在桌上");
             state.lastHandsAlert = now;
             state.hasViolated = true;
             logToCloud("VIOLATION", "雙手離開鏡頭範圍", true);
         }
-        
-        // 顯示手掌位置指引
-        ctx.fillStyle = 'rgba(255, 0, 85, 0.3)';
-        ctx.fillRect(0, canvas.height * 0.7, canvas.width, canvas.height * 0.3);
-        ctx.font = '24px Orbitron';
-        ctx.fillStyle = '#ff0055';
-        ctx.textAlign = 'center';
-        ctx.fillText('!! 請將雙手放在桌上 !!', canvas.width / 2, canvas.height * 0.85);
-    } else {
-        // 顯示理想的雙手位置指引
-        ctx.strokeStyle = 'rgba(0, 243, 255, 0.7)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([5, 5]);
-        
-        // 左手區域
-        ctx.strokeRect(canvas.width * 0.1, canvas.height * 0.7, canvas.width * 0.3, canvas.height * 0.25);
-        // 右手區域
-        ctx.strokeRect(canvas.width * 0.6, canvas.height * 0.7, canvas.width * 0.3, canvas.height * 0.25);
-        
-        ctx.setLineDash([]);
-        ctx.font = '16px Rajdhani';
-        ctx.fillStyle = 'rgba(0, 243, 255, 0.8)';
-        ctx.fillText('左手', canvas.width * 0.25, canvas.height * 0.85);
-        ctx.fillText('右手', canvas.width * 0.75, canvas.height * 0.85);
     }
+    
+    // 顯示理想的雙手位置指引（沒有紅色警示區）
+    ctx.strokeStyle = 'rgba(0, 243, 255, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    // 左手區域
+    ctx.strokeRect(canvas.width * 0.1, canvas.height * 0.7, canvas.width * 0.3, canvas.height * 0.25);
+    // 右手區域
+    ctx.strokeRect(canvas.width * 0.6, canvas.height * 0.7, canvas.width * 0.3, canvas.height * 0.25);
+    ctx.setLineDash([]);
+    ctx.font = '16px Rajdhani';
+    ctx.fillStyle = 'rgba(0, 243, 255, 0.8)';
+    ctx.fillText('左手', canvas.width * 0.25, canvas.height * 0.85);
+    ctx.fillText('右手', canvas.width * 0.75, canvas.height * 0.85);
 }
-
         function updateTimeoutBar(now) {
             const elapsed = now - state.lastLiveTimestamp;
             const barPct = Math.max(0, (config.timeoutMs - elapsed) / config.timeoutMs) * 100;
