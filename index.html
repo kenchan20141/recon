@@ -4,9 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-    <!-- SECURITY: Content Security Policy (CSP) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com https://cdn.jsdelivr.net/npm/@tensorflow/ https://cdn.jsdelivr.net/npm/@tensorflow-models/ ; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com ; font-src https://fonts.gstatic.com ; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io https://cdn.jsdelivr.net https://tfhub.dev wss://*.firebaseio.com;">
-    <title>AI RECON - Secure Monitor (Hand Tracking Fixed)</title>
+    <!-- SECURITY: Content Security Policy (CSP) - FIXED FOR TFJS/KAGGLE -->
+    <!-- Added: www.kaggle.com, storage.googleapis.com, uploads.kaggle.com for model weights -->
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self' https:; 
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com https://cdn.jsdelivr.net/npm/@tensorflow/ https://cdn.jsdelivr.net/npm/@tensorflow-models/; 
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
+        font-src https://fonts.gstatic.com; 
+        img-src 'self' data: blob:; 
+        media-src 'self' https://actions.google.com blob:; 
+        connect-src 'self' 
+            https://*.firebaseio.com 
+            wss://*.firebaseio.com 
+            https://justadudewhohacks.github.io 
+            https://cdn.jsdelivr.net 
+            https://tfhub.dev 
+            https://www.gstatic.com 
+            https://www.kaggle.com 
+            https://storage.googleapis.com 
+            https://uploads.kaggle.com 
+            https://models.essentia.dev;
+    ">
+    <title>AI RECON - Secure Monitor (CSP Fixed)</title>
 
     <!-- Face API -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -86,7 +105,12 @@
         .viewport.verified { border-color: var(--success-color); box-shadow: 0 0 20px rgba(0, 255, 157, 0.3); }
         .viewport.alert { border-color: var(--secondary-color); box-shadow: 0 0 40px var(--secondary-color); }
         
-        video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); /* Mirror effect */ }
+        /* Mirroring both video and canvas via CSS so coordinates match visually */
+        video, canvas { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            object-fit: cover; 
+            transform: scaleX(-1); 
+        }
         
         /* BUFFER BAR */
         .time-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 6px; background: #222; z-index: 25; }
@@ -184,9 +208,6 @@
         .consent-box h2 { color: var(--primary-color); margin-top: 0; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px; }
         .consent-box h4 { color: #fff; margin: 15px 0 5px 0; }
         .consent-box p { font-size: 0.9rem; line-height: 1.5; margin-bottom: 10px; }
-        .consent-box ul { margin: 5px 0 15px 20px; padding: 0; font-size: 0.9rem; }
-        .consent-box li { margin-bottom: 5px; }
-
         .consent-btn {
             display: block; width: 100%; padding: 15px; margin-top: 20px;
             background: var(--primary-color); color: #000; font-weight: bold; font-size: 1.1rem;
@@ -251,7 +272,7 @@
 
     <div class="viewport-wrapper">
         <div class="viewport" id="viewport">
-            <div id="loading-msg" class="overlay-msg">INITIALIZING AI MODELS...<br><span style="font-size:0.8em">Please Wait</span></div>
+            <div id="loading-msg" class="overlay-msg">INITIALIZING AI MODELS...<br><span style="font-size:0.8em">Downloading Weights (Please Wait)</span></div>
             <!-- Face Registration Overlay -->
             <div id="reg-overlay" class="overlay-msg" style="display:none; border-color:var(--success-color); color:var(--success-color);">
                 <h3>FACE REGISTRATION</h3>
@@ -339,7 +360,7 @@
         try {
             firebase.initializeApp(firebaseConfig);
             const database = firebase.database();
-        } catch(e) { console.error("Firebase init failed", e); }
+        } catch(e) { console.error("Firebase init warning", e); }
 
         let sessionId = ""; 
         let consentGiven = false;
@@ -428,8 +449,8 @@
             // Hand related
             handModel: null,
             handsDetected: 0,
-            lastHandsVisibleTime: 0, // When was the last time we saw 2 hands?
-            lastHandPredictions: [], // Store for drawing between detection frames
+            lastHandsVisibleTime: 0, 
+            lastHandPredictions: [], 
             
             // System
             lastProcessTime: 0,
@@ -439,21 +460,24 @@
             hasViolated: false
         };
         
-        const PROCESS_INTERVAL = 200; // Face check every 200ms
-        const HAND_INTERVAL = 300;    // Hand check every 300ms
+        const PROCESS_INTERVAL = 200; 
+        const HAND_INTERVAL = 300;    
 
         const config = {
             matchThreshold: 0.55,
             maxToiletVisits: 1, 
             toiletDuration: 5, 
             sessionMinutes: 30, 
-            timeoutMs: 5000,
-            handTimeoutMs: 5000 // Hands must be gone for 5s to trigger
+            handTimeoutMs: 5000 // 5 seconds
         };
 
         // --- INIT AI ---
         async function init() {
             try {
+                // Initialize Backend First for Stability
+                await tf.setBackend('webgl');
+                console.log("TF Backend set to WebGL");
+
                 // Load Face API
                 const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
                 await Promise.all([
@@ -464,8 +488,6 @@
                 console.log("Face API Loaded");
 
                 // Load Handpose
-                // Using TFJS backend to ensure compatibility
-                await tf.setBackend('webgl');
                 state.handModel = await handpose.load();
                 console.log("Handpose Loaded");
 
@@ -486,7 +508,7 @@
 
             } catch (e) {
                 console.error(e);
-                document.getElementById('loading-msg').innerText = "AI LOAD FAILED: " + e.message;
+                document.getElementById('loading-msg').innerHTML = "AI LOAD FAILED<br>" + e.message;
                 document.getElementById('loading-msg').style.color = "var(--secondary-color)";
             }
         }
@@ -541,7 +563,7 @@
             state.isRunning = true;
             state.hasViolated = false;
             state.lastLiveTimestamp = Date.now(); 
-            // Initialize hand timer to now so it doesn't trigger immediately
+            // Initialize hand timer to now
             state.lastHandsVisibleTime = Date.now(); 
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             
@@ -609,15 +631,13 @@
             if (state.handModel && (now - state.lastHandProcessTime > HAND_INTERVAL)) {
                 state.lastHandProcessTime = now;
                 try {
-                    // estimateHands returns array of hands
                     const hands = await state.handModel.estimateHands(video);
-                    state.lastHandPredictions = hands; // Save for drawing
+                    state.lastHandPredictions = hands; 
                     state.handsDetected = hands.length;
                     
                     document.getElementById('hand-debug-overlay').innerText = `HANDS: ${state.handsDetected}/2`;
 
-                    // Logic: If we see 2 hands, update the "Last Seen" timestamp to NOW.
-                    // This means "0 seconds ago, I saw hands".
+                    // Only reset timer if 2 hands are seen
                     if (state.handsDetected >= 2) {
                         state.lastHandsVisibleTime = now;
                     }
@@ -626,25 +646,22 @@
             }
 
             // 4. DRAWING (Every Frame)
-            // IMPORTANT: Clear rect FIRST
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw Hands (Green boxes)
+            // Draw Hands
             if (state.lastHandPredictions.length > 0) {
-                ctx.strokeStyle = '#00ff9d'; // Bright green
+                ctx.strokeStyle = '#00ff9d'; 
                 ctx.lineWidth = 4;
                 ctx.font = 'bold 16px Rajdhani';
                 ctx.fillStyle = '#00ff9d';
 
                 state.lastHandPredictions.forEach((hand, idx) => {
-                    // Handpose gives bounding box: [topLeftX, topLeftY], [bottomRightX, bottomRightY]
                     const bb = hand.boundingBox; 
                     if(bb) {
                         const x = bb.topLeft[0];
                         const y = bb.topLeft[1];
                         const w = bb.bottomRight[0] - x;
                         const h = bb.bottomRight[1] - y;
-                        
                         ctx.strokeRect(x, y, w, h);
                         ctx.fillText(`Hand ${idx+1}`, x, y - 10);
                     }
@@ -671,11 +688,10 @@
             // Priority 1: Face Check
             if (!state.isTargetPresent) {
                 triggerAlarm("TARGET MISSING (目標丟失)");
-                return; // Stop checking hands if face is gone
+                return; 
             }
 
             // Priority 2: Hands Check
-            // Calculate how long since we last saw 2 hands
             const handsGoneDuration = now - state.lastHandsVisibleTime;
             
             if (handsGoneDuration > config.handTimeoutMs) {
@@ -683,7 +699,6 @@
                 const sec = Math.floor(handsGoneDuration/1000);
                 triggerAlarm(`HANDS MISSING (${sec}s)`);
                 
-                // Update bar to look critical
                 timeoutBar.style.width = "0%";
                 timeoutBar.style.backgroundColor = "var(--secondary-color)";
             } else {
@@ -691,13 +706,11 @@
                 stopAlarm();
                 viewport.classList.add('verified');
                 
-                // Update UI Bar to show "Time until violation"
-                // 100% = hands just seen. 0% = 5 seconds passed.
+                // Countdown bar
                 const remaining = Math.max(0, config.handTimeoutMs - handsGoneDuration);
                 const pct = (remaining / config.handTimeoutMs) * 100;
                 
                 timeoutBar.style.width = pct + "%";
-                // Yellow if warning, Green if safe
                 timeoutBar.style.backgroundColor = pct < 40 ? "var(--warning-color)" : "var(--primary-color)";
             }
         }
@@ -709,7 +722,6 @@
             viewport.classList.add('alert');
             document.getElementById('led-status').className = "led err";
             
-            // Only log if it's a new type of alarm or intermittent
             if (state.lastAlarmType !== msg) {
                 logToCloud("ALERT", msg, true); 
                 state.lastAlarmType = msg;
@@ -721,7 +733,7 @@
                 alarmAudio.play().catch(e=>console.log(e));
             }
             
-            if (navigator.vibrate) navigator.vibrate([200]); // Short pulse
+            if (navigator.vibrate) navigator.vibrate([200]); 
         }
 
         function stopAlarm() {
@@ -800,23 +812,17 @@
         function endToilet() {
             document.getElementById('toilet-screen').style.display = 'none';
             state.isToilet = false;
-            // Reset timers so we don't alarm instantly
             state.lastLiveTimestamp = Date.now();
             state.lastHandsVisibleTime = Date.now();
             loop();
         }
 
-        // Visibility API to prevent cheating by switching tabs
         document.addEventListener("visibilitychange", () => {
             if (state.isRunning && !state.isToilet && document.hidden) {
                 logToCloud("VIOLATION", "Tab Hidden/Switched", true);
                 triggerAlarm("TAB SWITCHED");
             }
         });
-
-        // Mirror Canvas context to match CSS transform
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
 
     </script>
 </body>
