@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
-    <!-- SECURITY: Content Security Policy (CSP) - FIXED FOR TFJS/KAGGLE -->
-    <!-- Added: www.kaggle.com, storage.googleapis.com, uploads.kaggle.com for model weights -->
+    <!-- SECURITY: Content Security Policy (CSP) -->
+    <!-- CRITICAL FIX: Added https://storage.googleapis.com, https://www.kaggle.com, https://tfhub.dev to connect-src -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self' https:; 
         script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com https://cdn.jsdelivr.net/npm/@tensorflow/ https://cdn.jsdelivr.net/npm/@tensorflow-models/; 
@@ -20,20 +20,19 @@
             https://cdn.jsdelivr.net 
             https://tfhub.dev 
             https://www.gstatic.com 
-            https://www.kaggle.com 
             https://storage.googleapis.com 
+            https://www.kaggle.com 
             https://uploads.kaggle.com 
             https://models.essentia.dev;
     ">
-    <title>AI RECON - Secure Monitor (CSP Fixed)</title>
+    <title>AI RECON - Mode Selectable</title>
 
-    <!-- Face API -->
+    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
-    <!-- TensorFlow.js & Handpose -->
+    <!-- TensorFlow & Handpose (Original Versions) -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.10.0/dist/tf-core.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.10.0/dist/tf-converter.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.10.0/dist/tf-backend-webgl.min.js"></script>
@@ -105,11 +104,14 @@
         .viewport.verified { border-color: var(--success-color); box-shadow: 0 0 20px rgba(0, 255, 157, 0.3); }
         .viewport.alert { border-color: var(--secondary-color); box-shadow: 0 0 40px var(--secondary-color); }
         
-        /* Mirroring both video and canvas via CSS so coordinates match visually */
-        video, canvas { 
+        /* Mirroring ONLY video with CSS, Canvas will be transformed via JS */
+        video { 
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            object-fit: cover; 
-            transform: scaleX(-1); 
+            object-fit: cover; transform: scaleX(-1); 
+        }
+        canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            object-fit: cover;
         }
         
         /* BUFFER BAR */
@@ -172,16 +174,16 @@
             font-size: 1.1rem;
         }
         
-        .setting-row input {
+        .setting-row input, .setting-row select {
             background: #050505; 
             border: 1px solid var(--primary-color); 
             color: var(--primary-color);
-            padding: 8px; width: 90px; text-align: center; 
+            padding: 8px; width: 140px; text-align: center; 
             font-family: var(--font-main);
-            font-size: 1.2rem; 
+            font-size: 1.1rem; 
             font-weight: bold;
         }
-        .setting-row input:focus { box-shadow: 0 0 15px var(--primary-color); outline: none; }
+        .setting-row input:focus, .setting-row select:focus { box-shadow: 0 0 15px var(--primary-color); outline: none; }
 
         .log-box { margin-top: 20px; border-top: 2px solid #333; padding-top: 10px; }
         #log-display {
@@ -283,7 +285,7 @@
             <video id="webcam" autoplay playsinline muted></video>
             <canvas id="canvas"></canvas>
             
-            <!-- Hand Count Indicator -->
+            <!-- Hand Count Indicator (Hidden in non-proctoring mode) -->
             <div id="hand-debug-overlay">HANDS: 0/2</div>
 
             <div class="time-bar-container">
@@ -302,11 +304,18 @@
                 <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
                 <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
-               <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
+               <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG</button>
             </div>
 
             <div class="settings-panel" id="settings-panel">
                 <h3 style="color:var(--primary-color); margin:0 0 15px 0; font-size:1.2rem;">CONFIGURATION</h3>
+                <div class="setting-row">
+                    <label>Mode (模式)</label>
+                    <select id="cfg-mode" onchange="updateConfig()">
+                        <option value="proctoring">Proctoring (監考 - 臉+手)</option>
+                        <option value="standard">Standard (一般 - 僅臉)</option>
+                    </select>
+                </div>
                 <div class="setting-row">
                     <label>Session Duration (Minutes)</label>
                     <input type="number" id="cfg-duration" value="30" min="1" onchange="updateConfig()">
@@ -446,11 +455,10 @@
             isTargetPresent: false,
             currentDetections: [], 
             
-            // Hand related
+            // Hand related (Original Method)
             handModel: null,
             handsDetected: 0,
             lastHandsVisibleTime: 0, 
-            lastHandPredictions: [], 
             
             // System
             lastProcessTime: 0,
@@ -461,20 +469,21 @@
         };
         
         const PROCESS_INTERVAL = 200; 
-        const HAND_INTERVAL = 300;    
+        const HAND_INTERVAL = 200;    
 
         const config = {
+            mode: 'proctoring', // 'proctoring' or 'standard'
             matchThreshold: 0.55,
             maxToiletVisits: 1, 
             toiletDuration: 5, 
             sessionMinutes: 30, 
-            handTimeoutMs: 5000 // 5 seconds
+            handTimeoutMs: 5000 // 5 seconds grace period
         };
 
-        // --- INIT AI ---
+        // --- INIT AI (Original Logic) ---
         async function init() {
             try {
-                // Initialize Backend First for Stability
+                // Initialize Backend
                 await tf.setBackend('webgl');
                 console.log("TF Backend set to WebGL");
 
@@ -487,7 +496,7 @@
                 ]);
                 console.log("Face API Loaded");
 
-                // Load Handpose
+                // Load Handpose (Using original method)
                 state.handModel = await handpose.load();
                 console.log("Handpose Loaded");
 
@@ -500,6 +509,10 @@
                 video.onloadedmetadata = () => {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
+                    // Mirror context to match CSS mirror
+                    ctx.translate(canvas.width, 0);
+                    ctx.scale(-1, 1);
+                    
                     state.isAiReady = true;
                     document.getElementById('loading-msg').style.display = 'none';
                     if(consentGiven) document.getElementById('btn-start').disabled = false;
@@ -563,12 +576,19 @@
             state.isRunning = true;
             state.hasViolated = false;
             state.lastLiveTimestamp = Date.now(); 
-            // Initialize hand timer to now
+            // Initialize hand timer
             state.lastHandsVisibleTime = Date.now(); 
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             
+            // Adjust UI based on Mode
+            if(config.mode === 'standard') {
+                document.getElementById('hand-debug-overlay').style.display = 'none';
+            } else {
+                document.getElementById('hand-debug-overlay').style.display = 'block';
+            }
+            
             updateUI(true);
-            logToCloud("SYSTEM", "Monitoring Started", true);
+            logToCloud("SYSTEM", `Monitoring Started (${config.mode.toUpperCase()} MODE)`, true);
             loop();
         }
 
@@ -615,6 +635,9 @@
             updateTimer(timeLeft);
             if (timeLeft <= 0) { stopSystem(true); alert("Time's Up!"); return; }
 
+            // Clear Canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
             // 2. DETECT FACES (Throttled)
             if (now - state.lastProcessTime > PROCESS_INTERVAL) {
                 state.lastProcessTime = now;
@@ -627,47 +650,6 @@
                 state.isTargetPresent = state.currentDetections.some(d => d.isMatch);
             }
 
-            // 3. DETECT HANDS (Throttled)
-            if (state.handModel && (now - state.lastHandProcessTime > HAND_INTERVAL)) {
-                state.lastHandProcessTime = now;
-                try {
-                    const hands = await state.handModel.estimateHands(video);
-                    state.lastHandPredictions = hands; 
-                    state.handsDetected = hands.length;
-                    
-                    document.getElementById('hand-debug-overlay').innerText = `HANDS: ${state.handsDetected}/2`;
-
-                    // Only reset timer if 2 hands are seen
-                    if (state.handsDetected >= 2) {
-                        state.lastHandsVisibleTime = now;
-                    }
-
-                } catch (e) { console.warn("Hand detect error", e); }
-            }
-
-            // 4. DRAWING (Every Frame)
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Draw Hands
-            if (state.lastHandPredictions.length > 0) {
-                ctx.strokeStyle = '#00ff9d'; 
-                ctx.lineWidth = 4;
-                ctx.font = 'bold 16px Rajdhani';
-                ctx.fillStyle = '#00ff9d';
-
-                state.lastHandPredictions.forEach((hand, idx) => {
-                    const bb = hand.boundingBox; 
-                    if(bb) {
-                        const x = bb.topLeft[0];
-                        const y = bb.topLeft[1];
-                        const w = bb.bottomRight[0] - x;
-                        const h = bb.bottomRight[1] - y;
-                        ctx.strokeRect(x, y, w, h);
-                        ctx.fillText(`Hand ${idx+1}`, x, y - 10);
-                    }
-                });
-            }
-
             // Draw Faces
             state.currentDetections.forEach(det => {
                 const box = det.detection.box;
@@ -678,40 +660,85 @@
                 }).draw(canvas);
             });
 
-            // 5. VIOLATION CHECK LOGIC
+            // 3. DETECT HANDS (Only in Proctoring Mode)
+            if (config.mode === 'proctoring') {
+                if (state.handModel && (now - state.lastHandProcessTime > HAND_INTERVAL)) {
+                    state.lastHandProcessTime = now;
+                    try {
+                        // Original detection method
+                        const hands = await state.handModel.estimateHands(video);
+                        state.handsDetected = hands.length;
+                        
+                        document.getElementById('hand-debug-overlay').innerText = `HANDS: ${state.handsDetected}/2`;
+
+                        // Draw Hands
+                        ctx.strokeStyle = '#00ff9d';
+                        ctx.lineWidth = 3;
+                        ctx.font = '16px Rajdhani';
+                        ctx.fillStyle = '#00ff9d';
+
+                        hands.forEach((hand, index) => {
+                            const bb = hand.boundingBox;
+                            const x = bb.topLeft[0];
+                            const y = bb.topLeft[1];
+                            const width = bb.bottomRight[0] - x;
+                            const height = bb.bottomRight[1] - y;
+                            
+                            ctx.strokeRect(x, y, width, height);
+                            ctx.fillText(`Hand ${index + 1}`, x, y - 5);
+                        });
+
+                        // 5-Second Buffer Logic
+                        // If we see 2 hands, we are "safe" right now.
+                        if (state.handsDetected >= 2) {
+                            state.lastHandsVisibleTime = now;
+                        }
+
+                    } catch (e) { console.warn("Hand detect error", e); }
+                }
+            }
+
+            // 4. VIOLATION CHECK LOGIC
             checkStatus(now);
 
             state.animId = requestAnimationFrame(loop);
         }
 
         function checkStatus(now) {
-            // Priority 1: Face Check
+            // Priority 1: Face Check (Active in both modes)
             if (!state.isTargetPresent) {
                 triggerAlarm("TARGET MISSING (目標丟失)");
                 return; 
             }
 
-            // Priority 2: Hands Check
-            const handsGoneDuration = now - state.lastHandsVisibleTime;
-            
-            if (handsGoneDuration > config.handTimeoutMs) {
-                // VIOLATION: Hands gone for > 5 seconds
-                const sec = Math.floor(handsGoneDuration/1000);
-                triggerAlarm(`HANDS MISSING (${sec}s)`);
+            // Priority 2: Hands Check (Proctoring Mode Only)
+            if (config.mode === 'proctoring') {
+                const handsGoneDuration = now - state.lastHandsVisibleTime;
                 
-                timeoutBar.style.width = "0%";
-                timeoutBar.style.backgroundColor = "var(--secondary-color)";
+                if (handsGoneDuration > config.handTimeoutMs) {
+                    // VIOLATION: Hands gone for > 5 seconds
+                    const sec = Math.floor(handsGoneDuration/1000);
+                    triggerAlarm(`HANDS MISSING (${sec}s)`);
+                    
+                    timeoutBar.style.width = "0%";
+                    timeoutBar.style.backgroundColor = "var(--secondary-color)";
+                } else {
+                    // Safe zone or warning zone
+                    stopAlarm();
+                    viewport.classList.add('verified');
+                    
+                    const remaining = Math.max(0, config.handTimeoutMs - handsGoneDuration);
+                    const pct = (remaining / config.handTimeoutMs) * 100;
+                    
+                    timeoutBar.style.width = pct + "%";
+                    timeoutBar.style.backgroundColor = pct < 40 ? "var(--warning-color)" : "var(--primary-color)";
+                }
             } else {
-                // NO VIOLATION or WARNING PHASE
+                // Standard Mode: Just face is enough
                 stopAlarm();
                 viewport.classList.add('verified');
-                
-                // Countdown bar
-                const remaining = Math.max(0, config.handTimeoutMs - handsGoneDuration);
-                const pct = (remaining / config.handTimeoutMs) * 100;
-                
-                timeoutBar.style.width = pct + "%";
-                timeoutBar.style.backgroundColor = pct < 40 ? "var(--warning-color)" : "var(--primary-color)";
+                timeoutBar.style.width = "100%";
+                timeoutBar.style.backgroundColor = "var(--success-color)";
             }
         }
 
@@ -778,7 +805,16 @@
             config.sessionMinutes = parseInt(document.getElementById('cfg-duration').value) || 30;
             config.toiletDuration = parseInt(document.getElementById('cfg-toilet-dur').value) || 5;
             config.maxToiletVisits = parseInt(document.getElementById('cfg-toilet-max').value) || 1;
-            if(state.isRunning) state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+            config.mode = document.getElementById('cfg-mode').value;
+            
+            if(state.isRunning) {
+                state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
+                if(config.mode === 'standard') {
+                    document.getElementById('hand-debug-overlay').style.display = 'none';
+                } else {
+                    document.getElementById('hand-debug-overlay').style.display = 'block';
+                }
+            }
         }
         function requestToilet() {
             if(state.toiletVisits >= config.maxToiletVisits) return alert("Max visits reached");
