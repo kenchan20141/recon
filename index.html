@@ -5,14 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
     <!-- SECURITY: Content Security Policy (CSP) -->
-    <!-- XSS DEFENSE LAYER 1: 限制腳本與資源載入來源 -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' https://actions.google.com blob:; connect-src https://*.firebaseio.com https://justadudewhohacks.github.io https://cdn.jsdelivr.net wss://*.firebaseio.com;">
 
-    <title>AI RECON - Secure Monitor</title>
+    <title>AI RECON - Secure Monitor (Proctor V2)</title>
 
     <!-- Libraries -->
+    <!-- Face API -->
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/handtrackjs/dist/handtrack.min.js"></script> <!-- ADDED: Hand Detection -->
+    <!-- Handtrack.js for Hand Detection -->
+    <script src="https://cdn.jsdelivr.net/npm/handtrackjs@0.0.13/dist/handtrack.min.js"></script>
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
@@ -25,7 +27,6 @@
             --secondary-color: #ff0055;
             --success-color: #00ff9d;
             --warning-color: #ffcc00;
-            --info-color: #00a8ff; /* For Hand Tracking */
             --bg-color: #050505;
             --panel-bg: rgba(15, 25, 35, 0.98);
             --font-main: 'Orbitron', sans-serif;
@@ -88,6 +89,7 @@
         /* BUFFER BAR */
         .time-bar-container { position: absolute; bottom: 0; left: 0; width: 100%; height: 6px; background: #222; z-index: 25; }
         .time-bar { height: 100%; width: 100%; background: var(--primary-color); transition: width 0.1s linear; }
+        .hand-bar { position: absolute; top: 0; left: 0; height: 4px; width: 100%; background: var(--warning-color); z-index: 26; display:none;}
         
         #session-timer-display { color: #fff; font-weight: bold; }
 
@@ -107,22 +109,28 @@
 
         /* CONTROLS */
         .controls { width: 100%; margin-top: 15px; display: flex; flex-direction: column; gap: 12px; }
-        .control-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
         
-        button, select {
-            padding: 15px 5px; min-width: 120px;
+        button {
+            flex: 1; padding: 15px 5px; min-width: 120px;
             background: rgba(0, 243, 255, 0.08); border: 1px solid var(--primary-color);
             color: var(--primary-color); font-family: var(--font-main); cursor: pointer;
             transition: 0.2s; text-transform: uppercase;
             font-size: 1rem; font-weight: 700;
         }
-        select { background: #000; text-align: center; flex: 1; }
-        button { flex: 1; }
-
         button:hover:not(:disabled) { background: var(--primary-color); color: #000; box-shadow: 0 0 20px var(--primary-color); }
         button:disabled { border-color: #444; color: #555; cursor: not-allowed; background: transparent; }
         .btn-danger { border-color: var(--secondary-color); color: var(--secondary-color); }
         .btn-danger:hover:not(:disabled) { background: var(--secondary-color); color: #fff; box-shadow: 0 0 20px var(--secondary-color); }
+
+        /* CHECKBOX TOGGLE */
+        .mode-switch {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            background: rgba(0, 0, 0, 0.3); padding: 10px; border: 1px solid #333;
+            margin-bottom: 5px;
+        }
+        .switch-label { color: #fff; font-size: 1rem; }
+        input[type=checkbox] { transform: scale(1.5); accent-color: var(--primary-color); cursor: pointer; }
 
         /* SETTINGS */
         .settings-panel {
@@ -139,7 +147,7 @@
             font-size: 1.1rem;
         }
         
-        .setting-row input {
+        .setting-row input[type=number] {
             background: #050505; 
             border: 1px solid var(--primary-color); 
             color: var(--primary-color);
@@ -221,24 +229,8 @@
             <p>This system uses local browser-based processing (face-api.js & handtrack.js). No video stream is ever sent to a server.</p>
             <p>本系統使用瀏覽器端運算技術。影像畫面<b>絕不會</b>上傳至任何伺服器。</p>
             <h4>2. Data Collection (資料收集)</h4>
-            <p>Only timestamps of potential violations (e.g., "Left seat at 10:00") are logged. No images are stored.</p>
-            <p>僅記錄違規事件的時間點（如：10:00 離開座位），不儲存影像。</p>
-            <h4>3. Data Security (資料保存)</h4>
-            <p>Biometric data is stored in RAM only and cleared upon tab closure.</p>
-            <p>生物特徵僅存於暫存記憶體 (RAM)，關閉分頁後即自動清除。</p>
-            <h4 style="color:var(--success-color);">4. Security Architecture (資安防護架構)</h4>
-            <p>We implement defense-in-depth against XSS (Cross-Site Scripting):</p>
-            <ul>
-                <li><b>Input Sanitization (輸入淨化):</b> All user inputs are sanitized to strip HTML tags and database-illegal characters before processing.</li>
-                <li><b>Content Security Policy (CSP):</b> Strict browser policies block unauthorized scripts from executing.</li>
-                <li><b>Safe DOM Rendering:</b> Logs are displayed using text-nodes only, preventing malicious code injection.</li>
-            </ul>
-            <p>本工具採用多層防禦機制對抗跨站腳本攻擊 (XSS)：</p>
-            <ul>
-                <li><b>輸入淨化：</b>所有輸入皆經過過濾，自動剔除 HTML 標籤與特殊字符。</li>
-                <li><b>CSP 策略：</b>瀏覽器僅允許執行授權來源的程式碼。</li>
-                <li><b>安全渲染：</b>日誌僅以純文字格式顯示，杜絕惡意代碼注入的可能。</li>
-            </ul>
+            <p>Only timestamps of potential violations are logged. No images are stored.</p>
+            <p>僅記錄違規事件的時間點，不儲存影像。</p>
             <button class="consent-btn" onclick="acceptConsent()">I AGREE / 我同意</button>
         </div>
     </div>
@@ -257,8 +249,13 @@
     </header>
 
     <div class="viewport-wrapper">
+        <div class="mode-switch">
+            <input type="checkbox" id="proctor-toggle">
+            <label for="proctor-toggle" class="switch-label">PROCTOR MODE (HANDS + FACE) / 監考模式</label>
+        </div>
+
         <div class="viewport" id="viewport">
-            <div id="loading-msg" class="overlay-msg">INITIALIZING AI (FACE & HANDS)...</div>
+            <div id="loading-msg" class="overlay-msg">INITIALIZING AI...</div>
             <!-- Face Registration Overlay -->
             <div id="reg-overlay" class="overlay-msg" style="display:none; border-color:var(--success-color); color:var(--success-color);">
                 <h3>FACE REGISTRATION</h3>
@@ -267,9 +264,12 @@
             </div>
             <video id="webcam" autoplay playsinline muted></video>
             <canvas id="canvas"></canvas>
+            
             <div class="time-bar-container">
+                <div id="hand-timeout-bar" class="hand-bar"></div>
                 <div id="timeout-bar" class="time-bar"></div>
             </div>
+
             <div id="toilet-screen">
                 <h2 style="color:var(--warning-color)">RESTROOM BREAK</h2>
                 <div id="toilet-timer">00:00</div>
@@ -278,15 +278,8 @@
         </div>
 
         <div class="controls">
-            <div class="control-row">
-                <!-- Mode Selector -->
-                <select id="monitor-mode" onchange="updateModeUI()">
-                    <option value="standard">STANDARD (FACE ONLY)</option>
-                    <option value="proctor">PROCTOR (FACE + HANDS)</option>
-                </select>
+            <div class="btn-group">
                 <button id="btn-start" onclick="attemptStart()" disabled>ACTIVATE</button>
-            </div>
-            <div class="control-row">
                 <button id="btn-stop" class="btn-danger" onclick="attemptStopSystem()" disabled>TERMINATE</button>
                 <button id="btn-toilet" onclick="requestToilet()" disabled>TOILET (<span id="toilet-count">0</span>)</button>
                <button onclick="attemptToggleSettings()" id="btn-settings">⚙ CONFIG / LOGS</button>
@@ -294,10 +287,6 @@
 
             <div class="settings-panel" id="settings-panel">
                 <h3 style="color:var(--primary-color); margin:0 0 15px 0; font-size:1.2rem;">CONFIGURATION</h3>
-                <div class="setting-row">
-                    <label>Current Mode</label>
-                    <input type="text" id="cfg-mode-disp" value="STD" readonly style="opacity:0.5; width:120px; font-size:1rem;">
-                </div>
                 <div class="setting-row">
                     <label>Session Duration (Minutes)</label>
                     <input type="number" id="cfg-duration" value="30" min="1" onchange="updateConfig()">
@@ -311,7 +300,7 @@
                     <input type="number" id="cfg-toilet-max" value="1" min="0" onchange="updateConfig()">
                 </div>
                 <div class="log-box">
-                    <div style="color:var(--warning-color); margin-bottom:8px; font-size:1rem;">VIOLATION LOGS (XSS-SAFE RENDER)</div>
+                    <div style="color:var(--warning-color); margin-bottom:8px; font-size:1rem;">VIOLATION LOGS</div>
                     <div id="log-display"></div>
                     <div id="firebase-status" style="font-size:0.8rem; color:#666; text-align:right; margin-top:8px;">Connecting...</div>
                 </div>
@@ -323,7 +312,6 @@
     <div id="input-modal" class="modal-overlay">
         <div class="modal-box">
             <div class="modal-title" id="modal-msg">SESSION ID</div>
-            <!-- Modified input to prevent auto keyboard -->
             <input type="text" id="modal-input" class="modal-input" placeholder="ENTER ID" autocomplete="off">
             <div class="modal-btns">
                 <button class="btn-danger" id="modal-cancel-btn">CANCEL</button>
@@ -356,16 +344,6 @@
         let consentGiven = false;
         let adminPassword = "ckkchi"; 
 
-        // --- HAND TRACK CONFIG ---
-        let handModel = null;
-        const handModelParams = {
-            flipHorizontal: false, // video is already flipped by CSS usually, but we draw on canvas directly from video
-            maxNumBoxes: 4,
-            iouThreshold: 0.5,
-            scoreThreshold: 0.6,
-        };
-
-        // --- SECURITY: XSS PREVENTION ---
         const sanitizeInput = (str) => {
             if (!str) return "";
             const div = document.createElement('div');
@@ -390,17 +368,16 @@
                 audio.muted = false;
                 console.log("Audio unlocked for iOS");
             }).catch(error => {
-                console.warn("Audio unlock failed (Autoplay blocked):", error);
+                console.warn("Audio unlock failed:", error);
             });
         }
 
-        // --- MODAL LOGIC ---
         function acceptConsent() {
             unlockAudio();
             document.getElementById('consent-modal').style.display = 'none';
             consentGiven = true;
             document.getElementById('text-status').innerText = "SYSTEM IDLE (系統待機)";
-            if(state.isAiReady) document.getElementById('btn-start').disabled = false;
+            if(state.isAiReady && state.isHandReady) document.getElementById('btn-start').disabled = false;
         }
 
         function showInputPrompt(message, isPassword = false) {
@@ -415,11 +392,8 @@
                 inputEl.value = '';
                 inputEl.type = isPassword ? 'password' : 'text'; 
                 inputEl.placeholder = isPassword ? '******' : 'ENTER YOUR NAME';
-
                 inputEl.setAttribute('readonly', 'readonly');
-                inputEl.onclick = () => {
-                    inputEl.removeAttribute('readonly');
-                };
+                inputEl.onclick = () => { inputEl.removeAttribute('readonly'); };
 
                 modal.classList.add('active');
                 
@@ -448,11 +422,13 @@
         const ctx = canvas.getContext('2d');
         const viewport = document.getElementById('viewport');
         const timeoutBar = document.getElementById('timeout-bar');
+        const handTimeoutBar = document.getElementById('hand-timeout-bar');
         const alarmAudio = document.getElementById('alarm-sound');
         const logDisplay = document.getElementById('log-display');
 
         const state = {
             isAiReady: false,
+            isHandReady: false,
             isRunning: false,
             isToilet: false,
             toiletVisits: 0,
@@ -461,22 +437,24 @@
             
             referenceDescriptor: null,
             isTargetPresent: false,
-            areHandsPresent: true, // defaults to true in standard mode
             
             lastLiveTimestamp: 0,
+            lastHandsOkTimestamp: 0, // 時間戳：最後一次偵測到雙手的時間
             sessionEndTime: 0,
             lastAlarmType: null,
             integrityCheckInterval: null,
             hasViolated: false,
             
             lastProcessTime: 0,
-            currentDetections: [], 
-            currentHandPredictions: [],
+            currentDetections: [],
+            currentHandPredictions: [], 
             currentMotionScore: 100,
-            mode: 'standard' // 'standard' or 'proctor'
+            
+            handModel: null // Handtrack model
         };
         
-        const PROCESS_INTERVAL = 250; 
+        const PROCESS_INTERVAL = 200; // Face Detection
+        const HAND_PROCESS_INTERVAL = 200; // Hand Detection
 
         const config = {
             matchThreshold: 0.55,
@@ -484,14 +462,16 @@
             toiletDuration: 5, 
             sessionMinutes: 30, 
             timeoutMs: 5000,
-            motionThreshold: 0.5 
+            handTimeoutMs: 5000, // 手部 5 秒緩衝
+            motionThreshold: 0.5,
+            isProctorMode: false // Default off
         };
 
         const diffCanvas = document.createElement('canvas');
         diffCanvas.width = 64; diffCanvas.height = 48;
         const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
 
-        // --- INIT AI ---
+        // --- INIT & AI MODELS ---
         async function init() {
             try {
                 // Load Face API
@@ -501,10 +481,19 @@
                     faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
                     faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
                 ]);
+                state.isAiReady = true;
 
-                // Load HandTrack
-                handModel = await handTrack.load(handModelParams);
+                // Load Handtrack.js
+                const handModelParams = {
+                    flipHorizontal: false,
+                    maxNumBoxes: 4,
+                    iouThreshold: 0.5,
+                    scoreThreshold: 0.6,
+                };
+                state.handModel = await handTrack.load(handModelParams);
+                state.isHandReady = true;
 
+                // Setup Stream
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { width: 640, height: 480 },
                     audio: false
@@ -514,7 +503,6 @@
                 video.onloadedmetadata = () => {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
-                    state.isAiReady = true;
                     document.getElementById('loading-msg').style.display = 'none';
                     if(consentGiven) document.getElementById('btn-start').disabled = false;
                     document.getElementById('firebase-status').innerText = "System Ready";
@@ -522,19 +510,19 @@
 
             } catch (e) {
                 console.error(e);
-                document.getElementById('loading-msg').innerText = "AI LOAD FAILED (Check CSP/Network)";
+                document.getElementById('loading-msg').innerText = "AI LOAD FAILED";
                 document.getElementById('loading-msg').style.color = "var(--secondary-color)";
             }
-
-            if (state.isRunning) stopSystem(false);
         }
         init();
 
         // --- START SEQUENCE ---
         async function attemptStart() {
             unlockAudio();
-
             if(!consentGiven) return;
+
+            // Check Mode
+            config.isProctorMode = document.getElementById('proctor-toggle').checked;
 
             const inputName = await showInputPrompt("YOUR NAME");
             if (inputName && inputName.trim() !== "") {
@@ -543,10 +531,8 @@
                 sessionId = getDateId();
             }
             
-            // Get selected mode
-            const modeSelect = document.getElementById('monitor-mode');
-            state.mode = modeSelect.value;
-            document.getElementById('cfg-mode-disp').value = state.mode === 'proctor' ? 'PROCTOR' : 'STD';
+            // Disable settings during run
+            document.getElementById('proctor-toggle').disabled = true;
             
             startFaceRegistration();
         }
@@ -576,6 +562,7 @@
                     } else {
                         alert("Face not detected. Please look at the camera.\n未偵測到臉部，請注視鏡頭。");
                         regOverlay.style.display = 'none';
+                        document.getElementById('proctor-toggle').disabled = false;
                     }
                 }
             }, 1000);
@@ -586,15 +573,20 @@
             state.isRunning = true;
             state.hasViolated = false;
             state.lastLiveTimestamp = Date.now(); 
+            state.lastHandsOkTimestamp = Date.now(); // Init hand timer
             state.sessionEndTime = Date.now() + (config.sessionMinutes * 60 * 1000);
             
             updateUI(true);
             
+            // Log mode
+            const modeStr = config.isProctorMode ? "PROCTOR (Hands+Face)" : "STANDARD (Face)";
+            logToCloud("SESSION START", `Mode: ${modeStr}`, false);
+
             if(sessionId) {
                 database.ref('sessions/' + sessionId).set({
                     start_time: new Date().toISOString(),
                     status: 'active',
-                    mode: state.mode,
+                    mode: modeStr,
                     config: {
                         sessionMinutes: config.sessionMinutes,
                         toiletDuration: config.toiletDuration,
@@ -603,9 +595,7 @@
                 }).then(() => {
                     startIntegrityCheck();
                     loop();
-                }).catch(error => {
-                    console.error("Firebase init failed:", error);
-                    alert("無法連接到安全伺服器，將以離線模式運行");
+                }).catch(() => {
                     startIntegrityCheck(); 
                     loop();
                 });
@@ -616,17 +606,12 @@
         }
 
         async function attemptStopSystem() {
-            if (!navigator.onLine) {
-                alert("需要網路連線進行驗證");
-                return;
-            }
+            if (!navigator.onLine) { alert("需要網路連線進行驗證"); return; }
             const pass = await showInputPrompt("請輸入密碼以終止監控", true);
-            if(pass === null) return; 
-
-            if (pass === adminPassword) {
+            if(pass === adminPassword) {
                 stopSystem(false);
-            } else {
-                alert("密碼錯誤 (Invalid Password)");
+            } else if (pass !== null) {
+                alert("密碼錯誤");
             }
         }
 
@@ -639,6 +624,8 @@
             
             ctx.clearRect(0,0,canvas.width,canvas.height);
             updateUI(false);
+            
+            document.getElementById('proctor-toggle').disabled = false;
 
             const conclusion = state.hasViolated ? "會談結束 - 偵測到違規" : "會談通過 - 無違規";
             const reason = isAuto ? "時間到" : "手動終止";
@@ -652,19 +639,20 @@
 
         function updateUI(active) {
             document.getElementById('btn-start').disabled = active;
-            document.getElementById('monitor-mode').disabled = active;
             document.getElementById('btn-stop').disabled = !active;
             document.getElementById('btn-toilet').disabled = !active;
             document.getElementById('btn-settings').disabled = active;
             document.getElementById('led-status').className = active ? "led scan" : "led";
-            document.getElementById('text-status').innerText = active ? `MONITOR ACTIVE [${state.mode.toUpperCase()}]` : "TERMINATED";
+            document.getElementById('text-status').innerText = active ? "BIO-LOCK ACTIVE" : "TERMINATED";
             if(active) viewport.classList.add('active'); else viewport.classList.remove('active', 'alert', 'verified');
             timeoutBar.style.width = active ? "100%" : "0%";
-        }
-
-        function updateModeUI() {
-            const mode = document.getElementById('monitor-mode').value;
-            // Can add specific visual cues if needed
+            
+            if(active && config.isProctorMode) {
+                handTimeoutBar.style.display = 'block';
+                handTimeoutBar.style.width = "100%";
+            } else {
+                handTimeoutBar.style.display = 'none';
+            }
         }
 
         // --- MAIN LOOP ---
@@ -677,131 +665,137 @@
             updateTimer(timeLeft);
 
             if (timeLeft <= 0) {
-                stopSystem(true); 
+                stopSystem(true);
                 alert("Time's Up!");
                 return;
             }
 
+            // --- DETECTION LOGIC ---
             if (now - state.lastProcessTime > PROCESS_INTERVAL) {
                 state.lastProcessTime = now;
+                
+                // 1. Motion
                 state.currentMotionScore = calculateMotion();
                 
-                // 1. Face Detection
+                // 2. Face Detection
                 const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptors();
                 state.currentDetections = detections;
+                
+                // Match Face
+                let targetFound = false;
+                state.currentDetections.forEach(det => {
+                    const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
+                    det.isMatch = (distance < config.matchThreshold);
+                    if (det.isMatch) targetFound = true;
+                });
+                state.isTargetPresent = targetFound;
 
-                // 2. Hand Detection (If in Proctor Mode)
-                if (state.mode === 'proctor' && handModel) {
-                    const predictions = await handModel.detect(video);
+                // 3. Hand Detection (Only in Proctor Mode)
+                if (config.isProctorMode && state.handModel) {
+                    const predictions = await state.handModel.detect(video);
+                    // Filter: Keep only 'face' (sometimes mistakenly labeled) or 'open'/'closed'/'pinch'
+                    // Actually handtrack.js returns general objects. We look for >= 2 objects that are likely hands.
+                    // Note: handtrack.js often detects the face as a hand or vice versa. We need to rely on the count.
+                    // Usually filtering by label isn't perfect in v1. Let's assume all valid boxes are hands/limbs.
                     state.currentHandPredictions = predictions;
+                    
+                    // Logic: Must have at least 2 hands visible.
+                    // If < 2, we do NOT immediately alarm. We update timestamp only if >= 2.
+                    // Using 2 is strict. If the user has 1 hand visible, it will alarm after 5 secs.
+                    if (predictions.length >= 2) {
+                        state.lastHandsOkTimestamp = now;
+                    }
                 } else {
+                    // Not in proctor mode, always considered OK
+                    state.lastHandsOkTimestamp = now;
                     state.currentHandPredictions = [];
                 }
 
-                // 3. Logic Analysis
-                analyzeStatus(now);
+                checkStatus(state.isTargetPresent, state.currentMotionScore, now);
             }
 
-            // Drawing Phase
+            // --- RENDER ---
             ctx.clearRect(0,0,canvas.width,canvas.height);
             
-            // Draw Faces
+            // Draw Face
             state.currentDetections.forEach(det => {
                 const box = det.detection.box;
-                const drawBox = new faceapi.draw.DrawBox(box, { 
+                new faceapi.draw.DrawBox(box, { 
                     label: det.isMatch ? "TARGET" : "UNKNOWN",
                     boxColor: det.isMatch ? "#00ff9d" : "#ff0055",
                     lineWidth: 2
-                });
-                drawBox.draw(canvas);
+                }).draw(canvas);
             });
 
-            // Draw Hands (Visual Debugging)
-            if (state.mode === 'proctor') {
+            // Draw Hands (DEBUG: VISIBLE BOXES)
+            if (config.isProctorMode) {
                 state.currentHandPredictions.forEach(pred => {
                     const [x, y, w, h] = pred.bbox;
-                    ctx.strokeStyle = "#00a8ff"; // Hand Color
+                    ctx.strokeStyle = "#ffcc00"; // Yellow
                     ctx.lineWidth = 2;
                     ctx.strokeRect(x, y, w, h);
-                    ctx.font = "12px Arial";
-                    ctx.fillStyle = "#00a8ff";
-                    ctx.fillText(`${pred.label} ${Math.round(pred.score * 100)}%`, x, y > 10 ? y - 5 : 10);
+                    ctx.fillStyle = "#ffcc00";
+                    ctx.fillText("HAND " + Math.round(pred.score*100) + "%", x, y - 5);
                 });
             }
 
-            updateTimeoutBar(now);
+            updateBars(now);
             state.animId = requestAnimationFrame(loop);
         }
 
-        function analyzeStatus(now) {
-            // Check Face
-            let targetFound = false;
-            state.currentDetections.forEach(det => {
-                const distance = faceapi.euclideanDistance(state.referenceDescriptor, det.descriptor);
-                det.isMatch = (distance < config.matchThreshold);
-                if (det.isMatch) targetFound = true;
-            });
-            state.isTargetPresent = targetFound;
-
-            // Check Hands (Only for Proctor Mode)
-            if (state.mode === 'proctor') {
-                // Determine valid hands. 
-                // Note: handtrack.js sometimes detects 'face'. We filter for hand-related labels.
-                const validHands = state.currentHandPredictions.filter(p => 
-                    p.label !== 'face' && p.score > 0.6
-                );
-                // REQUIREMENT: Both hands (>= 2 hands)
-                state.areHandsPresent = (validHands.length >= 2);
-            } else {
-                state.areHandsPresent = true; // Ignored in standard mode
-            }
-
-            // Check Motion
-            const motionOK = state.currentMotionScore > config.motionThreshold;
-
-            // COMBINED CHECK (Logic for resetting the 5s timer)
-            // Timer resets ONLY if EVERYTHING is perfect.
-            // If hands missing, we do NOT reset, letting the bar drain.
-            if (state.isTargetPresent && motionOK && state.areHandsPresent) {
+        function checkStatus(targetPresent, motionScore, now) {
+            // General Status Check
+            if (targetPresent && motionScore > config.motionThreshold) {
                 state.lastLiveTimestamp = now;
-                stopAlarm();
-                viewport.classList.add('verified');
-                document.getElementById('text-status').innerText = "VERIFIED: TARGET & HANDS LOCKED";
-            } else {
-                viewport.classList.remove('verified');
-                // Status text update for feedback
-                if (!state.isTargetPresent) document.getElementById('text-status').innerText = "CHECKING: FACE NOT FOUND";
-                else if (!state.areHandsPresent) document.getElementById('text-status').innerText = "CHECKING: HANDS MISSING";
             }
         }
 
-        function updateTimeoutBar(now) {
-            // The buffer Logic: 
-            // The bar calculates time elapsed since 'lastLiveTimestamp'.
-            // If checks fail, 'lastLiveTimestamp' stops updating, so elapsed time grows.
-            // If elapsed > 5000ms, ALARM.
-            
-            const elapsed = now - state.lastLiveTimestamp;
-            const barPct = Math.max(0, (config.timeoutMs - elapsed) / config.timeoutMs) * 100;
-            timeoutBar.style.width = barPct + "%";
-            timeoutBar.style.backgroundColor = barPct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
+        function updateBars(now) {
+            // 1. Face / Motion Timeout
+            const faceElapsed = now - state.lastLiveTimestamp;
+            const facePct = Math.max(0, (config.timeoutMs - faceElapsed) / config.timeoutMs) * 100;
+            timeoutBar.style.width = facePct + "%";
+            timeoutBar.style.backgroundColor = facePct < 30 ? "var(--secondary-color)" : "var(--primary-color)";
 
-            if (elapsed > config.timeoutMs) {
-                let reason = "";
-                if (!state.isTargetPresent) reason = "目標離開偵測範圍 (Face Missing)";
-                else if (state.mode === 'proctor' && !state.areHandsPresent) reason = "未偵測到雙手 (Hands Missing)";
-                else if (state.currentMotionScore <= config.motionThreshold) reason = "偵測到靜態圖像 (Static Image)";
+            if (faceElapsed > config.timeoutMs) {
+                let reason = !state.isTargetPresent ? "目標離開 (Face Missing)" : "畫面靜止 (Static)";
+                triggerAlarm(reason);
+                return; 
+            }
 
-                if (reason) {
-                    triggerAlarm(` ${reason}`); 
+            // 2. Hand Timeout (Proctor Mode)
+            if (config.isProctorMode) {
+                const handElapsed = now - state.lastHandsOkTimestamp;
+                const handPct = Math.max(0, (config.handTimeoutMs - handElapsed) / config.handTimeoutMs) * 100;
+                handTimeoutBar.style.width = handPct + "%";
+                
+                // Update Status text for feedback
+                if (state.currentHandPredictions.length < 2) {
+                     document.getElementById('text-status').innerText = `⚠ HANDS MISSING (${Math.ceil((config.handTimeoutMs - handElapsed)/1000)}s)`;
+                     document.getElementById('text-status').style.color = "var(--warning-color)";
+                } else if (!state.hasViolated) {
+                     document.getElementById('text-status').innerText = "VERIFIED: HANDS & FACE LOCKED";
+                     document.getElementById('text-status').style.color = "var(--primary-color)";
+                     viewport.classList.add('verified');
                 }
+
+                if (handElapsed > config.handTimeoutMs) {
+                    triggerAlarm("雙手未偵測 (Hands Missing > 5s)");
+                }
+            } else {
+                 if (!state.hasViolated && state.isTargetPresent) {
+                     document.getElementById('text-status').innerText = "VERIFIED: FACE LOCKED";
+                     viewport.classList.add('verified');
+                 }
             }
         }
 
         // --- ALARM & LOGGING ---
         function triggerAlarm(msg) {
             document.getElementById('text-status').innerText = "⚠ " + msg;
+            document.getElementById('text-status').style.color = "var(--secondary-color)";
             viewport.classList.add('alert');
+            viewport.classList.remove('verified');
             document.getElementById('led-status').className = "led err";
             
             if (state.lastAlarmType !== msg) {
@@ -813,11 +807,9 @@
             if(alarmAudio.paused) { 
                 alarmAudio.muted = false;
                 alarmAudio.currentTime = 0; 
-                var playPromise = alarmAudio.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(error => console.warn("Alarm blocked", error));
-                }
+                alarmAudio.play().catch(e => console.warn("Alarm blocked", e));
             }
+            
             if (navigator.vibrate) navigator.vibrate([1000, 500, 1000]);
         }
 
@@ -832,7 +824,7 @@
             const now = new Date();
             const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
 
-            if (saveToDb) {
+            if (saveToDb || category.includes("START")) {
                 const div = document.createElement('div');
                 div.className = "log-entry";
                 
@@ -841,20 +833,16 @@
                 timeSpan.textContent = `[${timeStr}] `;
                 
                 const msgNode = document.createTextNode(`${category}: ${msg}`);
-                
                 div.appendChild(timeSpan);
                 div.appendChild(msgNode);
                 logDisplay.appendChild(div);
                 logDisplay.scrollTop = logDisplay.scrollHeight;
 
-                const safeMsg = sanitizeInput(msg);
-                const safeCategory = sanitizeInput(category);
-
                 if(sessionId) {
                     database.ref('sessions/' + sessionId + '/logs').push({
                         time: timeStr,
-                        type: safeCategory,
-                        details: safeMsg
+                        type: sanitizeInput(category),
+                        details: sanitizeInput(msg)
                     });
                 }
             }
@@ -864,24 +852,18 @@
         function startIntegrityCheck() {
             state.integrityCheckInterval = setInterval(async () => {
                 if (!state.isRunning || state.isToilet) return;
-                
                 try {
                     const snapshot = await database.ref('sessions/' + sessionId).once('value');
                     if (snapshot.exists() && snapshot.val().status === 'terminated') {
-                        logToCloud("SEVERE", "Session 被遠端終止", true);
                         stopSystem(false);
                     }
-                } catch (error) {
-                    // console.warn("Firebase validation skipped");
-                }
+                } catch (error) {}
             }, 10000); 
         }
 
         document.addEventListener("visibilitychange", () => {
             if (state.isRunning && !state.isToilet && document.hidden) {
-                logToCloud("SEVERE", "分頁切換", true);
                 triggerAlarm("分頁切換");
-                state.hasViolated = true;
             }
         });
 
@@ -911,17 +893,9 @@
 
         // --- SETTINGS ---
         function attemptToggleSettings() {
-            if (!navigator.onLine) {
-                alert("需要網路連線進行驗證");
-                return;
-            }
+            if (!navigator.onLine) { alert("需要網路連線"); return; }
             if (state.isRunning) return; 
-            toggleSettings();
-        }
-
-        function toggleSettings() {
-            const panel = document.getElementById('settings-panel');
-            panel.classList.toggle('open');
+            document.getElementById('settings-panel').classList.toggle('open');
         }
 
         function updateConfig() {
@@ -937,8 +911,8 @@
         // --- TOILET MODE ---
         let tInt = null;
         function requestToilet() {
-            if(state.toiletVisits >= config.maxToiletVisits) { alert("Max Limit Reached / 已達次數上限"); return; }
-            if(!confirm("Start Toilet Break? Timer will start. / 確定開始如廁計時？")) return;
+            if(state.toiletVisits >= config.maxToiletVisits) { alert("Max Limit Reached"); return; }
+            if(!confirm("Start Toilet Break?")) return;
 
             state.isToilet = true;
             state.toiletVisits++;
@@ -960,9 +934,8 @@
                     toiletScreen.style.display = 'none';
                     state.isToilet = false;
                     state.lastLiveTimestamp = Date.now();
-                    logToCloud("VIOLATION", "如廁超時", true);
+                    state.lastHandsOkTimestamp = Date.now(); // Reset hand timer
                     triggerAlarm("如廁超時");
-                    state.hasViolated = true;
                 }
             }, 1000);
 
@@ -971,6 +944,7 @@
                 toiletScreen.style.display = 'none';
                 state.isToilet = false;
                 state.lastLiveTimestamp = Date.now();
+                state.lastHandsOkTimestamp = Date.now(); // Reset hand timer
                 loop();
             };
         }
